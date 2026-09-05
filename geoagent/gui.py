@@ -32,6 +32,7 @@ class ChatWindow:
         self._build_style()
         self._build_ui()
         self._queue: queue.Queue = queue.Queue()
+        self._live_open = False
         self.root.after(120, self._poll_queue)
         self._log_system(BANNER_LINE)
         self._log_system(f"工作区: {self.agent.workdir}")
@@ -152,9 +153,14 @@ class ChatWindow:
 
     def _on_provider_change(self) -> None:
         msg = self.agent.config.set_provider(self.cmb_provider.get())
-        self._sync_model_list()
         self._log_system(msg)
         self._refresh_status()
+        # 后台拉取该提供商的真实模型列表（失败回退内置预设）
+        def _fetch():
+            remote = self.agent.config.fetch_models()
+            if remote:
+                self.root.after(0, lambda: self.cmb_model.configure(values=remote[:50]))
+        threading.Thread(target=_fetch, daemon=True).start()
 
     def _on_model_change(self) -> None:
         msg = self.agent.config.set_model(self.cmb_model.get().strip())
@@ -190,26 +196,66 @@ class ChatWindow:
             from .cli import _handle_slash
             self._append(_handle_slash(text, self.agent) or "", "system")
             return
+        if not self.agent.online:
+            from .cli import _demo_reply
+            self._append("（离线简单模式）", "system")
+            self._append(_demo_reply(text, self.agent), "assistant")
+            return
         self.btn_send.configure(state="disabled")
+        self._live_open = False
         threading.Thread(target=self._worker, args=(text,), daemon=True).start()
 
     def _worker(self, text: str) -> None:
+        def on_event(ev: dict) -> None:
+            self._queue.put(("ev", ev))
+
         try:
-            reply = self.agent.chat(text)
-            self._queue.put(("assistant", reply))
+            reply = self.agent.chat(text, on_event=on_event)
+            self._queue.put(("done", reply))
         except Exception as exc:  # noqa: BLE001
             self._queue.put(("error", f"ERROR: {exc}"))
+
+    def _handle_event(self, ev: dict) -> None:
+        """流式事件：delta 打字机效果，工具调用实时可见。"""
+        self.txt.configure(state="normal")
+        if ev["type"] == "delta":
+            if not self._live_open:
+                self.txt.insert("end", "\n🤖 ", "assistant")
+                self._live_open = True
+            self.txt.insert("end", ev["text"], "assistant")
+            self.txt.see("end")
+        elif ev["type"] == "tool_start":
+            import json as _json
+            args_s = _json.dumps(ev["args"], ensure_ascii=False)[:110]
+            self._live_open = False
+            self.txt.insert("end", f"\n🔧 {ev['name']}({args_s})\n", "tool")
+        elif ev["type"] == "tool_end":
+            r = ev["result"].replace("\n", " ")
+            self.txt.insert("end", f"   ↳ {r[:150]}{'…' if len(r) > 150 else ''}\n", "tool")
+        self.txt.see("end")
+        self.txt.configure(state="disabled")
 
     def _poll_queue(self) -> None:
         try:
             while True:
                 tag, msg = self._queue.get_nowait()
-                self._append(("Ricardo: " if tag == "assistant" else "") + msg, tag)
+                if tag == "ev":
+                    self._handle_event(msg)
+                    continue
+                if tag == "done":
+                    if not self._live_open:
+                        self._append("🤖 " + msg, "assistant")
+                    else:
+                        self._append("", "assistant")
+                    self._live_open = False
+                else:
+                    self._live_open = False
+                    self._append(msg, "error")
         except queue.Empty:
             pass
         self.btn_send.configure(state="normal")
         self._refresh_status()
-        self.root.after(150, self._poll_queue)
+        self.root.after(120, self._poll_queue)
 
     def run(self) -> None:
         self.root.mainloop()

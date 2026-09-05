@@ -150,3 +150,29 @@ def test_see_image_guards(tmp_path, monkeypatch):
     assert "不支持的图片格式" in out
     out = registry.execute("see_image", {"path": "missing.png"})
     assert "不存在" in out
+
+
+def test_session_save_load(tmp_path, monkeypatch):
+    from geoagent import GeoAgent
+    from geoagent import core as core_mod
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(core_mod, "SESSIONS_DIR", tmp_path / "sessions")
+    agent = GeoAgent()
+    agent.history = [{"role": "user", "content": "q"}, {"role": "assistant", "content": "a"}]
+    assert "已保存" in agent.save_session("projA")
+    agent.history = []
+    out = agent.load_session("projA")
+    assert "已恢复" in out and agent.history[-1]["content"] == "a"
+    assert "projA" in agent.list_sessions()
+    assert "不存在" in agent.load_session("nope")
+
+
+def test_offline_chat_events(tmp_path, monkeypatch):
+    from geoagent import GeoAgent
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("RICARDO_API_KEY", raising=False)
+    monkeypatch.delenv("GEOAGENT_API_KEY", raising=False)
+    agent = GeoAgent()
+    events = []
+    out = agent.chat("hi", on_event=events.append)
+    assert "offline" in out and events == []  # 离线路径不产生流事件

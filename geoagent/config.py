@@ -142,6 +142,23 @@ class AgentConfig:
         self.save()
         return f"思考强度已设为 {level}"
 
+    def fetch_models(self) -> Optional[List[str]]:
+        """从提供商的 /models 端点拉取真实模型列表；失败返回 None（调用方回退硬编码）。"""
+        import requests
+        if not self.api_key:
+            return None
+        try:
+            r = requests.get(
+                self.base_url.rstrip("/") + "/models",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=6,
+            )
+            data = r.json().get("data", [])
+            ids = sorted(m.get("id") for m in data if m.get("id"))
+            return ids or None
+        except Exception:  # noqa: BLE001
+            return None
+
     def status(self) -> str:
         has_key = "已配置" if self.api_key else "未配置密钥"
         return (

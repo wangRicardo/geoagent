@@ -21,7 +21,7 @@ BANNER = r"""
 ╚█████╔╝╚██████╔╝███████║    ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║
  ╚════╝  ╚═════╝ ╚══════╝    ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║
                              ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝
-        地球物理 × 机器学习 · 你的个人研究 Agent · v0.4.3
+        地球物理 × 机器学习 · 你的个人研究 Agent · v0.5.0
 """
 
 SLASH_HELP = """对话内命令:
@@ -33,6 +33,7 @@ SLASH_HELP = """对话内命令:
   /cd [路径]                切换工作文件夹（类似 codex 选工作区）
   /clear                   清空对话历史
   /export [文件名.md]       导出对话为 Markdown 研究日志（存到工作区）
+  /save [名称] /load [名称] /sessions   会话快照（保存/恢复/列表）
   /tools                   列出工具
   /config                  配置保存位置: ~/.geoagent/config.json
 其余输入都会发给模型。"quit" 或 Ctrl+C 退出。""".format(
@@ -55,9 +56,19 @@ def _handle_slash(line: str, agent: GeoAgent) -> str | None:
         return cfg.set_provider(arg) if arg else f"可用提供商: {', '.join(PROVIDERS)}\n当前: {cfg.provider}"
     if cmd == "/model":
         if not arg:
-            return "可用模型: " + ", ".join(cfg.models())
+            remote = cfg.fetch_models()
+            if remote:
+                return f"远端可用模型({len(remote)}): " + ", ".join(remote[:30]) + \
+                       ("\n" if len(remote) > 30 else "") + f"\n内置预设: " + ", ".join(cfg.models())
+            return "可用模型(内置): " + ", ".join(cfg.models())
         out = cfg.set_model(arg)
-        return out + "\n（提示: 输入 /reload 不需要——下一条消息自动生效）"
+        return out
+    if cmd == "/save":
+        return agent.save_session(arg or "session")
+    if cmd == "/load":
+        return agent.load_session(arg or "session") + f"\n工作目录: {agent.workdir}"
+    if cmd == "/sessions":
+        return "已保存的会话: " + agent.list_sessions()
     if cmd == "/thinking":
         return cfg.set_thinking(arg) if arg else f"思考强度当前: {cfg.thinking}，可选: {', '.join(THINKING_LEVELS)}"
     if cmd == "/cd":
@@ -185,6 +196,29 @@ def main() -> None:
               f"思考强度: {agent.config.thinking} | online={agent.online}")
         print(f"  工作目录: {agent.workdir}")
         print("  输入 /help 查看对话内命令，quit 退出。\n")
+
+        def _chat_streamed(line: str) -> None:
+            state = {"streamed": False}
+
+            def on_event(ev: dict) -> None:
+                if ev["type"] == "tool_start":
+                    args_s = json.dumps(ev["args"], ensure_ascii=False)[:110]
+                    print(f"\n  🔧 {ev['name']}({args_s})", flush=True)
+                elif ev["type"] == "tool_end":
+                    r = ev["result"].replace("\n", " ")
+                    print(f"     ↳ {r[:150]}{'…' if len(r) > 150 else ''}", flush=True)
+                elif ev["type"] == "delta":
+                    if not state["streamed"]:
+                        print("\n🤖 ", end="", flush=True)
+                        state["streamed"] = True
+                    print(ev["text"], end="", flush=True)
+
+            reply = agent.chat(line, on_event=on_event)
+            if state["streamed"]:
+                print(flush=True)
+            else:
+                print(f"🤖 {reply}")
+
         while True:
             try:
                 line = input("你> ").strip()
@@ -199,7 +233,7 @@ def main() -> None:
                 print(_demo_reply(line, agent))
                 continue
             try:
-                print(agent.chat(line))
+                _chat_streamed(line)
             except Exception as exc:  # noqa: BLE001
                 print(f"ERROR: {exc}")
     else:

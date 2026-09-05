@@ -94,6 +94,14 @@ def wavelet_ricker(freq_hz: float, dt_ms: float = 1.0, length_ms: float = 100.0)
 ricardo gui              # 图形界面：文件夹工作区 + 提供商/模型/思考强度下拉热切换
 ```
 
+## 体验特性（v0.5.0）
+
+- 流式输出 + 工具调用实时可视化（CLI/GUI）
+- API 错误自动重试（指数退避）
+- `/save` `/load` 会话快照；`/model` 自动拉取提供商真实模型列表
+- 独立 exe：运行 `build_exe.cmd` 生成 `dist/RicardoAgent.exe`，无需 Python 环境
+- ⚠️ 安全说明：`run_python` 在本机以当前用户权限真实执行，只运行你审阅过的代码
+
 ## 视觉自查（v0.4.3）
 
 - `see_image`：agent 生成图件后自动"看图"质检——坐标轴、图例、配色、数据异常，

@@ -66,7 +66,12 @@ def write_file(path: str, content: str) -> str:
 
 @registry.register(category="files")
 def run_python(code: str, timeout_sec: int = 60) -> str:
-    """在工作目录里用独立 Python 进程执行一段代码，返回 stdout/stderr（适合数据处理与画图脚本）。"""
+    """在工作目录里用独立 Python 进程执行一段代码，返回 stdout/stderr（适合数据处理与画图脚本）。
+
+    安全提示：这段代码在本机以当前用户权限真实执行（超时与工作目录隔离是仅有的
+    约束），因此只应让 agent 运行你审阅过的数据处理/绘图代码；不要把密钥等敏感
+    环境变量暴露给不可信来源生成的代码。
+    """
     try:
         proc = subprocess.run(
             [sys.executable, "-c", code],
