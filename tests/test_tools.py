@@ -134,3 +134,19 @@ def test_history_trim_and_export(tmp_path, monkeypatch):
     assert "已导出" in out
     text = (tmp_path / "log.md").read_text(encoding="utf-8")
     assert "a5" in text and "Ricardo" in text
+
+
+def test_see_image_guards(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    # 无密钥时的明确提示
+    out = registry.execute("see_image", {"path": "a.png"})
+    assert "ERROR" in out and ("密钥" in out or "offline" in out)
+    # 路径越界与格式守卫（有密钥环境也不该崩溃）
+    monkeypatch.setenv("RICARDO_API_KEY", "sk-test")
+    out = registry.execute("see_image", {"path": "../x.png"})
+    assert "越出工作目录" in out
+    (tmp_path / "a.txt").write_text("hi", encoding="utf-8")
+    out = registry.execute("see_image", {"path": "a.txt"})
+    assert "不支持的图片格式" in out
+    out = registry.execute("see_image", {"path": "missing.png"})
+    assert "不存在" in out

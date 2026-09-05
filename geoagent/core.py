@@ -28,6 +28,8 @@ class GeoAgent:
             "你是 Ricardo Agent，地球物理与机器学习领域的研究助手。你在用户指定的"
             "工作文件夹内工作，可以调用工具读写文件、读取地震/测井数据、做信号处理、"
             "运行 Python 代码和快速建模。回答要严谨：引用工具返回的数值，不确定时明确说明。"
+            "用 plot_* 工具生成图件后，应调用 see_image 做视觉自查（检查标签、配色、数据异常），"
+            "发现问题就修正数据或参数重新绘图，直到合格再交付。"
         ),
     ) -> None:
         self.registry = registry or default_registry
