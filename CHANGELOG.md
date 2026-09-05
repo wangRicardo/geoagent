@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.6.1 (2026-09-05)
+
+语义检索升级（45 个工具）。
+
+- 三级检索后端，按可用性自动选择：provider（当前提供商 /embeddings 接口，
+  可用 GEOAGENT_EMBED_MODEL 指定模型）→ local（sentence-transformers，
+  RICARDO_LOCAL_EMBED_MODEL）→ tfidf（纯本地兜底）
+- `lit_reindex`：一键重建语义索引；lit_ingest 增量补向量，后端不可用时自动降级
+- lit_search 显式指定语义后端但库为 TF-IDF 时，现场懒升级构建向量
+- 同义改述命中：中文查询可直接命中英文段落（向量化后余弦匹配）
+- 各提供商默认嵌入模型映射（openai/zhipu/qwen/siliconflow/ollama）
+- mock 嵌入端到端测试：中文查询→英文段落 命中率 1.0；16→17 项测试通过
+
 ## v0.6.0 (2026-09-05)
 
 文献 RAG（44 个工具）。

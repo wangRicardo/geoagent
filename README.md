@@ -1,6 +1,6 @@
 # Ricardo Agent —— 你的地球物理 × 机器学习个人 Agent
 
-一个从零开始、可自己持续扩展的研究 agent 框架（当前版本 **v0.3.0**，内置 44 个工具，可在任意文件夹工作）。核心理念：**模型可以换，工具是你的资产**。
+一个从零开始、可自己持续扩展的研究 agent 框架（当前版本 **v0.3.0**，内置 45 个工具，可在任意文件夹工作）。核心理念：**模型可以换，工具是你的资产**。
 agent 的智力来自 LLM，价值来自你亲手写的领域工具（读 SEG-Y、看测井曲线、快速建模……）。
 
 官网：<https://wangricardo.github.io/geoagent/>
@@ -97,7 +97,7 @@ ricardo gui              # 图形界面：文件夹工作区 + 提供商/模型/
 ## 文献 RAG（v0.6.0）
 
 文献研究闭环：`arxiv_search` 检索 → `arxiv_download` 下载 → `lit_ingest` 入库 → `lit_search` 定位原文 → `lit_ask` 带引用回答。
-索引本地 TF-IDF（纯 numpy，中文按字 bigram），离线可检索；索引随工作区隔离（`.ricardo_lit/`）。
+检索三级后端自动选择：**provider**（提供商 /embeddings，`GEOAGENT_EMBED_MODEL` 可指定模型）→ **local**（sentence-transformers）→ **tfidf**（离线兜底）。`lit_reindex` 一键重建；中文查询可直接命中英文段落。索引随工作区隔离（`.ricardo_lit/`）。
 
 ## 体验特性（v0.5.0）
 

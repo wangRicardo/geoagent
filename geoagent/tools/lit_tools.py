@@ -1,7 +1,11 @@
-"""文献 RAG：arXiv 检索下载 → PDF/TXT 解析入库 → 本地检索 → 带引用的问答。
+"""文献 RAG：arXiv 检索下载 → PDF/TXT 解析入库 → 语义检索 → 带引用的问答。
 
-索引完全本地（TF-IDF 余弦相似度，纯 numpy 实现，无外部 API、离线可用），
-存放在工作区 ``.ricardo_lit/`` 目录，随工作区隔离——每个课题一套文献库。
+检索三级后端（按可用性自动选择，lit_reindex 可显式切换）：
+  1. provider   —— 当前提供商的 /embeddings 接口（可用 GEOAGENT_EMBED_MODEL 指定模型）
+  2. local      —— 本地 sentence-transformers 模型（RICARDO_LOCAL_EMBED_MODEL，默认多语 MiniLM）
+  3. tfidf      —— 本地 TF-IDF 余弦（纯 numpy，永远可用，兜底）
+索引存放在工作区 ``.ricardo_lit/``（chunks 在 db.json，向量在 embeddings.npy），
+随工作区隔离——每个课题一套文献库。
 
 典型闭环：
   arxiv_search 检索 → arxiv_download 下载 PDF → lit_ingest 入库
@@ -27,6 +31,21 @@ LIT_DIR = ".ricardo_lit"          # 工作区内的索引目录
 CHUNK_SIZE = 1200                  # 字符
 CHUNK_OVERLAP = 200
 ARXIV_API = "http://export.arxiv.org/api/query"
+EMBED_BATCH = 32
+
+# 各提供商默认的 embedding 模型（None 表示该提供商没有 embeddings 端点）
+PROVIDER_EMBED_MODELS = {
+    "openai": "text-embedding-3-small",
+    "zhipu": "embedding-3",
+    "qwen": "text-embedding-v3",
+    "siliconflow": "BAAI/bge-m3",
+    "ollama": "nomic-embed-text",
+    "deepseek": None,
+    "moonshot": None,
+}
+LOCAL_EMBED_MODEL = os.environ.get(
+    "RICARDO_LOCAL_EMBED_MODEL", "paraphrase-multilingual-MiniLM-L12-v2"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +101,103 @@ class TfidfIndex:
         nb = np.sqrt(sum(v * v for v in b.values())) or 1.0
         dot = sum(v * b.get(w, 0.0) for w, v in a.items())
         return dot / (na * nb)
+
+
+# ---------------------------------------------------------------------------
+# 嵌入后端
+# ---------------------------------------------------------------------------
+
+def _embed_provider(texts: List[str], model: Optional[str] = None) -> np.ndarray:
+    """调用当前提供商的 /embeddings 接口，返回 (n, dim) 归一化向量。"""
+    from ..config import AgentConfig
+    cfg = AgentConfig()
+    if not cfg.api_key:
+        raise RuntimeError("未配置 API 密钥，provider 嵌入不可用")
+    model = model or os.environ.get("GEOAGENT_EMBED_MODEL") \
+        or PROVIDER_EMBED_MODELS.get(cfg.provider)
+    if not model:
+        raise RuntimeError(
+            f"提供商 {cfg.provider} 没有 embeddings 端点；"
+            "可用 GEOAGENT_EMBED_MODEL 显式指定兼容端点的模型，"
+            "或 lit_reindex backend=local / tfidf"
+        )
+    from openai import OpenAI
+    client = OpenAI(api_key=cfg.api_key, base_url=cfg.base_url)
+    vecs: List[List[float]] = []
+    for i in range(0, len(texts), EMBED_BATCH):
+        batch = [t[:6000] for t in texts[i:i + EMBED_BATCH]]
+        resp = client.embeddings.create(model=model, input=batch)
+        vecs += [d.embedding for d in resp.data]
+    arr = np.asarray(vecs, dtype=np.float32)
+    return arr / (np.linalg.norm(arr, axis=1, keepdims=True) + 1e-9)
+
+
+def _embed_local(texts: List[str], model: Optional[str] = None) -> np.ndarray:
+    """本地 sentence-transformers 嵌入（首次使用会下载模型）。"""
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError:
+        raise RuntimeError(
+            "本地嵌入需要 sentence-transformers: pip install sentence-transformers"
+        )
+    st = SentenceTransformer(model or LOCAL_EMBED_MODEL)
+    arr = np.asarray(st.encode(texts, batch_size=EMBED_BATCH, show_progress_bar=False),
+                     dtype=np.float32)
+    return arr / (np.linalg.norm(arr, axis=1, keepdims=True) + 1e-9)
+
+
+def _get_embedder(backend: str):
+    """backend -> embed 函数；不可用抛 RuntimeError。"""
+    if backend == "provider":
+        return _embed_provider
+    if backend == "local":
+        return _embed_local
+    raise RuntimeError(f"未知嵌入后端: {backend}")
+
+
+def _current_provider() -> str:
+    from ..config import AgentConfig
+    return AgentConfig().provider
+
+
+def _active_backend(db: dict) -> str:
+    """数据库当前向量索引的后端名（tfidf 或 provider/local）。"""
+    return db.get("embed", {}).get("backend", "tfidf")
+
+
+def _embed_texts(db: dict, texts: List[str], backend: Optional[str] = None) -> np.ndarray:
+    """按指定后端嵌入；backend=None 时沿用库中现有后端（缺省 tfidf）。"""
+    backend = backend or _active_backend(db)
+    if backend == "tfidf":
+        raise RuntimeError("tfidf 后端不产生向量")
+    return _get_embedder(backend)(texts)
+
+
+def _semantic_scores(db: dict, query: str, backend: Optional[str] = None):
+    """语义检索打分；后端不可用时返回 None（调用方回退 TF-IDF）。"""
+    if "embed" not in db:
+        return None
+    vec_path = os.path.join(_lit_dir(), "embeddings.npy")
+    if not os.path.exists(vec_path):
+        return None
+    mat = np.load(vec_path)
+    if len(mat) != len(db["chunks"]):
+        return None
+    try:
+        qv = _embed_texts(db, [query], backend)[0]
+    except RuntimeError:
+        return None
+    return mat @ qv  # 已归一化，点积即余弦
+
+
+def _tfidf_scores(db: dict, query: str) -> np.ndarray:
+    idx = _build_index(db)
+    qv = idx.transform(_tokenize(query))
+    return np.array([TfidfIndex.cosine(qv, dv) for dv in idx.doc_vecs])
+
+
+def _save_vectors(vectors: np.ndarray) -> None:
+    np.save(os.path.join(_lit_dir(), "embeddings.npy"), vectors)
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +323,7 @@ def lit_ingest(paths: List[str]) -> str:
     db = _load_db()
     known = {c["source"] for c in db["chunks"]}
     added, skipped = 0, 0
+    new_chunks: List[dict] = []
     for f in files:
         rel = os.path.relpath(f, root)
         if rel in known:
@@ -223,36 +340,78 @@ def lit_ingest(paths: List[str]) -> str:
             skipped += 1
             continue
         for chunk in _chunk_text(text):
-            db["chunks"].append({"source": rel, "text": chunk})
+            new_chunks.append({"source": rel, "text": chunk})
         db["sources"][rel] = {"pages": text.count("[page"), "chars": len(text),
                               "ingested": datetime.now().isoformat(timespec="seconds")}
         added += 1
+    db["chunks"] += new_chunks
+    # 已有语义索引时，为新块增量补向量；失败则降级为 TF-IDF 库
+    if "embed" in db and new_chunks:
+        try:
+            vecs = _embed_texts(db, [c["text"] for c in new_chunks])
+            vec_path = os.path.join(_lit_dir(), "embeddings.npy")
+            old = np.load(vec_path) if os.path.exists(vec_path) else np.zeros((0, vecs.shape[1]), np.float32)
+            _save_vectors(np.vstack([old, vecs]))
+        except RuntimeError as exc:
+            db.pop("embed", None)
+            if os.path.exists(os.path.join(_lit_dir(), "embeddings.npy")):
+                os.remove(os.path.join(_lit_dir(), "embeddings.npy"))
+            _save_db(db)
+            return (f"ERROR: 语义索引增量更新失败（{exc}），已回退 TF-IDF。"
+                    f"可稍后运行 lit_reindex 重建语义索引。")
     _save_db(db)
     n = len(db["chunks"])
+    backend = _active_backend(db)
     return (f"入库完成: 新增 {added} 篇（跳过 {skipped}），文献库共 {n} 个文本块、"
-            f"{len(db['sources'])} 篇文献 → {LIT_DIR}/db.json")
+            f"{len(db['sources'])} 篇文献（检索后端: {backend}）→ {LIT_DIR}/db.json")
 
 
 @registry.register(category="rag")
-def lit_search(query: str, k: int = 5) -> str:
-    """在已入库的文献库中检索最相关的文本块（TF-IDF 余弦，本地离线）。"""
+def lit_search(query: str, k: int = 5, backend: str = "") -> str:
+    """在文献库中检索最相关的文本块。
+
+    默认用库中已有的索引后端（语义向量优先，TF-IDF 兜底）；backend 可显式
+    指定 provider / local / tfidf。语义后端不可用时自动回退 TF-IDF 并说明。
+    """
     db = _load_db()
     if not db["chunks"]:
         return "文献库为空。先用 lit_ingest 导入 PDF/TXT，或 arxiv_download 下载文献。"
-    idx = _build_index(db)
-    qv = idx.transform(_tokenize(query))
-    scores = [TfidfIndex.cosine(qv, dv) for dv in idx.doc_vecs]
+    wanted = (backend or _active_backend(db)).lower()
+    scores, used, note = None, wanted, ""
+    if wanted != "tfidf" and "embed" not in db:
+        # 懒升级：库还是 TF-IDF 时，显式请求语义后端会现场构建向量索引
+        try:
+            vecs = _get_embedder(wanted)([c["text"] for c in db["chunks"]], None)
+            if wanted == "provider":
+                model_name = os.environ.get("GEOAGENT_EMBED_MODEL") \
+                    or PROVIDER_EMBED_MODELS.get(_current_provider()) or wanted
+            else:
+                model_name = os.environ.get("RICARDO_LOCAL_EMBED_MODEL", LOCAL_EMBED_MODEL)
+            db["embed"] = {"backend": wanted, "model": model_name}
+            _save_vectors(vecs)
+            _save_db(db)
+        except RuntimeError:
+            pass
+    if wanted != "tfidf":
+        scores = _semantic_scores(db, query, wanted or None)
+        if scores is None:
+            used, note = "tfidf", f"（{wanted} 后端不可用，已回退 TF-IDF）"
+    if scores is None:
+        used = "tfidf"
+        scores = _tfidf_scores(db, query)
     order = np.argsort(scores)[::-1][:max(1, min(k, 8))]
-    out = []
+    out = [f"检索结果（{query!r}，后端 {used}{note}）:"]
+    hit = False
     for i in order:
         if scores[i] <= 0:
             break
+        hit = True
         c = db["chunks"][int(i)]
         snippet = c["text"][:300].replace("\n", " ")
         out.append(f"[{scores[i]:.3f}] {c['source']}\n    {snippet}…")
-    if not out:
+    if not hit:
         return f"没有检索到与 {query!r} 相关的内容。"
-    return f"检索结果（{query!r}）:\n" + "\n\n".join(out)
+    return "\n\n".join(out)
 
 
 @registry.register(category="rag")
@@ -264,9 +423,9 @@ def lit_ask(question: str, k: int = 5) -> str:
     db = _load_db()
     if not db["chunks"]:
         return "文献库为空。先用 lit_ingest 导入文献。"
-    idx = _build_index(db)
-    qv = idx.transform(_tokenize(question))
-    scores = [TfidfIndex.cosine(qv, dv) for dv in idx.doc_vecs]
+    scores = _semantic_scores(db, question)  # 语义优先，不可用自动回退 TF-IDF
+    if scores is None:
+        scores = _tfidf_scores(db, question)
     order = np.argsort(scores)[::-1][:max(1, min(k, 8))]
     ctx, refs = [], []
     for rank, i in enumerate(order, 1):
@@ -314,10 +473,48 @@ def lit_status() -> str:
     db = _load_db()
     if not db["sources"]:
         return f"文献库为空（索引目录 {LIT_DIR}/）。用 lit_ingest 或 arxiv_download 开始。"
-    lines = [f"文献 {len(db['sources'])} 篇 / 文本块 {len(db['chunks'])} 个:"]
+    lines = [f"文献 {len(db['sources'])} 篇 / 文本块 {len(db['chunks'])} 个 / "
+             f"检索后端 {_active_backend(db)}:"]
     for src, meta in db["sources"].items():
         lines.append(f"  {src} — {meta['chars']:,} 字符, {meta['pages']} 页, {meta['ingested']}")
     return "\n".join(lines)
+
+
+@registry.register(category="rag")
+def lit_reindex(backend: str = "provider", model: str = "") -> str:
+    """重建文献库的语义检索索引。backend: provider | local | tfidf。
+
+    provider: 用当前提供商的 /embeddings 接口（GEOAGENT_EMBED_MODEL 或按提供商默认）；
+    local: 本地 sentence-transformers（RICARDO_LOCAL_EMBED_MODEL）；
+    tfidf: 纯本地词频索引（兜底，离线永远可用）。
+    语义后端不可用时返回明确原因，库保持原状。
+    """
+    db = _load_db()
+    if not db["chunks"]:
+        return "文献库为空，无需重建索引。"
+    backend = backend.lower()
+    if backend == "tfidf":
+        db.pop("embed", None)
+        if os.path.exists(os.path.join(_lit_dir(), "embeddings.npy")):
+            os.remove(os.path.join(_lit_dir(), "embeddings.npy"))
+        _save_db(db)
+        return f"已切换为 TF-IDF 索引（{len(db['chunks'])} 个文本块）。"
+    if backend not in ("provider", "local"):
+        return f"ERROR: backend 可选 provider / local / tfidf，收到 {backend!r}"
+    try:
+        vecs = _get_embedder(backend)([c["text"] for c in db["chunks"]], model or None)
+    except RuntimeError as exc:
+        return f"ERROR: {exc}"
+    if backend == "provider":
+        default_model = model or os.environ.get("GEOAGENT_EMBED_MODEL") \
+            or PROVIDER_EMBED_MODELS.get(_current_provider())
+    else:
+        default_model = model or LOCAL_EMBED_MODEL
+    db["embed"] = {"backend": backend, "model": default_model}
+    _save_vectors(vecs)
+    _save_db(db)
+    return (f"语义索引重建完成: 后端 {backend}（{default_model}），"
+            f"{vecs.shape[0]} 个文本块 x {vecs.shape[1]} 维。现在同义改述也能命中。")
 
 
 # ---------------------------------------------------------------------------

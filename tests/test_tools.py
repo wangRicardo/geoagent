@@ -197,3 +197,50 @@ def test_lit_rag(tmp_path, monkeypatch):
     assert "ERROR" in out and "密钥" in out
     out = registry.execute("arxiv_download", {"arxiv_id": "bad-id"})
     assert "ERROR" in out
+
+
+def test_lit_semantic_backend(tmp_path, monkeypatch):
+    import geoagent.tools.lit_tools as lit
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "paper.txt").write_text(
+        "\n\n".join(f"Deep learning phase picking with neural networks on seismic "
+                    f"waveforms, experiment {i}: transformer encoder attends to "
+                    f"multi-station features for earthquake detection. " * 4
+                    for i in range(1, 8)), encoding="utf-8")
+    assert "入库完成" in registry.execute("lit_ingest", {"paths": ["paper.txt"]})
+    assert "tfidf" in registry.execute("lit_status", {})
+
+    # mock 一个本地嵌入后端：固定 4 维语义向量（同义改述向量相近）
+    calls = []
+    def fake_local(texts, model=None):
+        calls.append(len(texts))
+        vec_map = {"机器学习": [1, 1, 0, 0], "deep learning": [1, 1, 0, 0],
+                   "拾震相": [0, 0, 1, 1], "phase picking": [0, 0, 1, 1]}
+        out = []
+        for t in texts:
+            tl = t.lower()
+            v = [0.0, 0.0, 0.0, 0.0]
+            for k, vec in vec_map.items():
+                if k in tl:
+                    v = [a + b for a, b in zip(v, vec)]
+            out.append(v if any(v) else [0.1, 0.1, 0.1, 0.1])
+        arr = np.asarray(out, dtype=np.float32)
+        return arr / (np.linalg.norm(arr, axis=1, keepdims=True) + 1e-9)
+    monkeypatch.setattr(lit, "_embed_local", fake_local)
+
+    # 中文查询命中英文段落（语义检索的核心价值）
+    out = registry.execute("lit_search", {"query": "机器学习 拾震相", "k": 2, "backend": "local"})
+    assert "后端 local" in out, out
+    assert "[1." in out
+    assert calls  # 确实走了嵌入
+    # lit_reindex 本地后端重建
+    out = registry.execute("lit_reindex", {"backend": "local"})
+    assert "语义索引重建完成" in out, out
+    # provider 后端不可用时优雅回退
+    monkeypatch.delenv("RICARDO_API_KEY", raising=False)
+    monkeypatch.delenv("GEOAGENT_API_KEY", raising=False)
+    out = registry.execute("lit_reindex", {"backend": "provider"})
+    assert "ERROR" in out
+    # tfidf 兜底依然可用
+    out = registry.execute("lit_search", {"query": "transformer encoder", "k": 1})
+    assert "tfidf" in out or "后端" in out
