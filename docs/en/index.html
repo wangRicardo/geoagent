@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ricardo Agent — A Personal AI Agent for Geophysics × Machine Learning</title>
+<meta name="description" content="Ricardo Agent is an open-source personal AI agent framework built for geophysics & machine learning researchers: SEG-Y/LAS data tools, seismic forward modeling, ML baselines, LaTeX paper compilation, and multi-provider model hot-swapping.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --bg2: #101828;
+    --card: rgba(255,255,255,.04);
+    --border: rgba(255,255,255,.09);
+    --text: #e8ecf4;
+    --muted: #9aa7ba;
+    --accent: #22d3ee;
+    --grad: linear-gradient(120deg, #22d3ee, #818cf8 55%, #f472b6);
+    --font-latin: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    --font-body: "Inter", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--font-body);
+    font-size: 16px; line-height: 1.7;
+    overflow-x: hidden; position: relative;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: rgba(34,211,238,.3); }
+
+  .aurora { position: absolute; inset: 0; z-index: -2; overflow: hidden; }
+  .aurora::before, .aurora::after { content: ""; position: absolute; width: 60vw; height: 60vw; border-radius: 50%; filter: blur(120px); opacity: .16; }
+  .aurora::before { background: #22d3ee; top: -25vw; left: -10vw; }
+  .aurora::after { background: #818cf8; top: 10vw; right: -20vw; }
+  .grid-bg { position: absolute; inset: 0; z-index: -1;
+    background-image: linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
+    background-size: 48px 48px; mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, #000 40%, transparent 100%); }
+
+  nav { position: absolute; top: 0; width: 100%; z-index: 50; backdrop-filter: blur(14px); background: rgba(10,14,26,.6); border-bottom: 1px solid var(--border); }
+  nav .inner { max-width: 1100px; margin: 0 auto; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-family: var(--font-latin); font-weight: 700; font-size: 1.1rem; letter-spacing: .04em; }
+  .logo span { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  nav a { color: var(--muted); text-decoration: none; margin-left: 28px; font-size: .92rem; transition: color .2s; }
+  nav a:hover { color: var(--accent); }
+  nav .lang { font-family: var(--font-mono); font-size: .8rem; border: 1px solid var(--border); padding: 4px 12px; border-radius: 999px; margin-left: 22px; }
+  nav .btn-nav { background: var(--grad); color: #0a0e1a; padding: 8px 18px; border-radius: 999px; font-weight: 700; margin-left: 22px; }
+
+  header { max-width: 860px; margin: 0 auto; padding: 176px 24px 96px; text-align: center; }
+  .badge { display: inline-flex; gap: 8px; align-items: center; border: 1px solid var(--border); background: var(--card); border-radius: 999px; padding: 6px 18px; font-size: .84rem; color: var(--accent); margin-bottom: 32px; letter-spacing: .05em; }
+  h1 {
+    font-family: var(--font-latin); font-weight: 700;
+    font-size: clamp(2.4rem, 5.6vw, 4rem);
+    line-height: 1.12; letter-spacing: -0.02em; /* Latin headings: tight tracking */
+  }
+  h1 .grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .subtitle { color: var(--muted); font-size: 1.12rem; line-height: 1.75; max-width: 640px; margin: 30px auto 44px; text-wrap: balance; }
+  .cta { display: inline-flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+  .btn { font-family: var(--font-latin); padding: 14px 34px; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: .98rem; letter-spacing: .03em; transition: transform .2s, box-shadow .2s; }
+  .btn:hover { transform: translateY(-2px); }
+  .btn-primary { background: var(--grad); color: #0a0e1a; box-shadow: 0 8px 30px rgba(34,211,238,.25); }
+  .btn-ghost { border: 1px solid var(--border); color: var(--text); background: var(--card); }
+
+  .stats { display: flex; gap: 64px; justify-content: center; margin-top: 72px; flex-wrap: wrap; }
+  .stat { text-align: center; }
+  .stat b { font-family: var(--font-latin); font-size: 2.2rem; font-weight: 700; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; display: block; line-height: 1.2; }
+  .stat span { color: var(--muted); font-size: .84rem; letter-spacing: .12em; text-transform: uppercase; }
+
+  section { max-width: 1100px; margin: 0 auto; padding: 88px 24px; }
+  h2 { font-family: var(--font-latin); font-size: 1.9rem; font-weight: 700; text-align: center; margin-bottom: 10px; letter-spacing: -0.01em; }
+  .sec-sub { text-align: center; color: var(--muted); margin-bottom: 56px; font-size: .98rem; }
+  .sec-sub::after { content: ""; display: block; width: 56px; height: 2px; background: var(--grad); margin: 22px auto 0; border-radius: 2px; opacity: .7; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 30px 26px; transition: transform .25s, border-color .25s; }
+  .card:hover { transform: translateY(-4px); border-color: rgba(34,211,238,.4); }
+  .card .icon { font-size: 1.5rem; width: 50px; height: 50px; display: grid; place-items: center; border-radius: 13px; background: linear-gradient(135deg, rgba(34,211,238,.15), rgba(129,140,248,.15)); border: 1px solid var(--border); margin-bottom: 20px; }
+  .card h3 { font-family: var(--font-latin); font-size: 1.05rem; font-weight: 700; margin-bottom: 10px; }
+  .card p { color: var(--muted); font-size: .92rem; line-height: 1.75; }
+
+  .code-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.4); max-width: 860px; margin: 0 auto; }
+  .code-wrap + .code-wrap { margin-top: 28px; }
+  .code-head { display: flex; gap: 8px; padding: 14px 18px; border-bottom: 1px solid var(--border); align-items: center; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .code-head .name { margin-left: 10px; color: var(--muted); font-size: .8rem; font-family: var(--font-mono); }
+  pre { padding: 26px 28px; overflow-x: auto; font-family: var(--font-mono); font-size: .85rem; line-height: 1.85; }
+  pre .cmt { color: #64748b; }
+  .kw { color: #c084fc; } .fn { color: #22d3ee; } .str { color: #86efac; }
+
+  .roadmap { position: relative; max-width: 680px; margin: 0 auto; padding-left: 36px; border-left: 2px solid rgba(34,211,238,.25); }
+  .step { position: relative; margin-bottom: 44px; }
+  .step:last-child { margin-bottom: 0; }
+  .step::before { content: ""; position: absolute; left: -45px; top: 8px; width: 16px; height: 16px; border-radius: 50%; background: var(--grad); box-shadow: 0 0 16px rgba(34,211,238,.6); }
+  .step h3 { font-family: var(--font-latin); font-size: 1.02rem; font-weight: 700; margin-bottom: 6px; }
+  .step p { color: var(--muted); font-size: .9rem; line-height: 1.75; }
+  .tag { display: inline-block; font-size: .74rem; font-family: var(--font-mono); padding: 2px 12px; border-radius: 999px; border: 1px solid var(--border); margin-bottom: 8px; color: #34d399; letter-spacing: .04em; }
+
+  footer { border-top: 1px solid var(--border); padding: 44px 24px; text-align: center; color: var(--muted); font-size: .88rem; }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer .flogo { font-family: var(--font-latin); font-weight: 700; letter-spacing: .04em; }
+
+  @media (max-width: 640px) {
+    nav a:not(.btn-nav):not(.lang) { display: none; }
+    .stats { gap: 36px; }
+  }
+</style>
+</head>
+<body>
+<div class="aurora"></div><div class="grid-bg"></div>
+
+<nav><div class="inner">
+  <div class="logo">◈ <span>Ricardo&nbsp;Agent</span></div>
+  <div>
+    <a href="#features">Features</a>
+    <a href="#quickstart">Quick Start</a>
+    <a href="#roadmap">Roadmap</a>
+    <a class="lang" href="../">中文</a>
+    <a class="btn-nav" href="https://github.com/wangRicardo/geoagent">GitHub ↗</a>
+  </div>
+</div></nav>
+
+<header>
+  <div class="badge">✦ v0.3.1 · Open Source · MIT License</div>
+  <h1>Your Geophysics Research<br>Deserves an <span class="grad">Agent That Speaks Your Science</span></h1>
+  <p class="subtitle">Ricardo Agent puts SEG-Y seismic data, LAS well logs, seismic forward modeling, machine-learning baselines, and LaTeX paper compilation into one model-agnostic AI agent framework. Swap the model anytime — the tools are your research assets.</p>
+  <div class="cta">
+    <a class="btn btn-primary" href="#quickstart">Get Started</a>
+    <a class="btn btn-ghost" href="https://github.com/wangRicardo/geoagent">View Source</a>
+  </div>
+  <div class="stats">
+    <div class="stat"><b>27</b><span>Built-in Tools</span></div>
+    <div class="stat"><b>5</b><span>Domains</span></div>
+    <div class="stat"><b>6</b><span>LLM Providers</span></div>
+    <div class="stat"><b>0</b><span>Vendor Lock-in</span></div>
+  </div>
+</header>
+
+<section id="features">
+  <h2>Built for Geoscientists</h2>
+  <p class="sec-sub">Every tool comes from a real research workflow — write one function and the LLM can call it.</p>
+  <div class="cards">
+    <div class="card"><div class="icon">🌍</div><h3>Seismic Data Toolchain</h3><p>SEG-Y file inspection and trace extraction, FFT spectral analysis, Butterworth filtering, and time-to-depth conversion — built on segyio and numpy.</p></div>
+    <div class="card"><div class="icon">🛢️</div><h3>Well-Log Interpretation</h3><p>Browse and read LAS curves; depth-value pairs flow straight into the conversation for lithology prediction and curve reconstruction with the ML tools.</p></div>
+    <div class="card"><div class="icon">📈</div><h3>Seismic Forward Modeling</h3><p>Ricker wavelets, 1D convolution synthetics, and tuning-thickness estimates — generate controllable training data for machine learning.</p></div>
+    <div class="card"><div class="icon">🤖</div><h3>Instant ML Baselines</h3><p>Dataset profiling, automatic classification/regression baselines, cross-validation, PCA, collinearity warnings, and confusion-matrix reports in one command.</p></div>
+    <div class="card"><div class="icon">📝</div><h3>LaTeX Paper Workflow</h3><p>Detects your local TeX toolchain, ships a CJK-ready paper template, and compiles to PDF in one step — extracting the key error lines when compilation fails.</p></div>
+    <div class="card"><div class="icon">🔌</div><h3>Multi-Provider Hot-Swap</h3><p>OpenAI, DeepSeek, Zhipu, Moonshot, Qwen, and Ollama — switch provider, model, and thinking effort mid-conversation.</p></div>
+  </div>
+</section>
+
+<section id="quickstart">
+  <h2>Up and Running in Three Minutes</h2>
+  <p class="sec-sub">Install and go. Extending it takes one Python function with a docstring.</p>
+  <div class="code-wrap">
+    <div class="code-head">
+      <div class="dot" style="background:#f87171"></div><div class="dot" style="background:#fbbf24"></div><div class="dot" style="background:#34d399"></div>
+      <span class="name">terminal</span>
+    </div>
+    <pre><span class="cmt"># Install</span>
+pip install geoagent-ml[all]
+
+<span class="cmt"># Start a chat in any folder (codex-style workspace)</span>
+ricardo chat <span class="str">D:\research\survey-A</span>
+
+<span class="cmt"># Hot-swap provider / model / thinking effort in chat</span>
+<span class="fn">/provider</span> deepseek    <span class="fn">/model</span> deepseek-reasoner    <span class="fn">/thinking</span> high
+
+<span class="cmt"># Ask the agent to write a report and compile it</span>
+<span class="str">"Write a phase-picking experiment report and compile it to PDF"</span></pre>
+  </div>
+  <div class="code-wrap">
+    <div class="code-head">
+      <div class="dot" style="background:#f87171"></div><div class="dot" style="background:#fbbf24"></div><div class="dot" style="background:#34d399"></div>
+      <span class="name">my_tool.py — your first domain tool</span>
+    </div>
+    <pre><span class="kw">from</span> geoagent <span class="kw">import</span> registry
+
+<span class="fn">@registry.register</span>(category=<span class="str">"geophysics"</span>)
+<span class="kw">def</span> <span class="fn">nmo_velocity</span>(t0_ms: <span class="kw">float</span>, vrms_ms: <span class="kw">float</span>, offset_m: <span class="kw">float</span>) -> <span class="kw">str</span>:
+    <span class="str">"""Compute NMO stretch for a given offset from T0 and Vrms."""</span>
+    t = (t0_ms**2 + (offset_m / vrms_ms)**2 * 1e6) ** 0.5
+    <span class="kw">return</span> <span class="str">f"NMO moveout: {t - t0_ms:.2f} ms @ offset={offset_m} m"</span>
+
+<span class="cmt"># Saved — the LLM can call nmo_velocity immediately. Zero glue code.</span></pre>
+  </div>
+</section>
+
+<section id="roadmap">
+  <h2>Roadmap</h2>
+  <p class="sec-sub">From a tool-calling assistant to an agent that does research on its own.</p>
+  <div class="roadmap">
+    <div class="step"><span class="tag">✅ v0.3 Shipped</span><h3>Domain Tools · Workspaces · Multi-Provider</h3><p>27 tools across seismic, well logging, forward modeling, machine learning, and LaTeX; any-folder workspaces; six hot-swappable providers.</p></div>
+    <div class="step"><span class="tag">v0.4 Planned</span><h3>Visualization & Multimodality</h3><p>Seismic sections and crossplot exports, letting the agent interpret figures through vision models.</p></div>
+    <div class="step"><span class="tag">v0.5 Planned</span><h3>Deep-Learning Workflows</h3><p>PyTorch training wrappers: checkpointing, early stopping, seismic-facies classification and denoising pipelines.</p></div>
+    <div class="step"><span class="tag">v1.0 Vision</span><h3>Autonomous Research Agent</h3><p>Multi-step planning, literature retrieval, experiment tracking, and an agent self-evaluation benchmark.</p></div>
+  </div>
+</section>
+
+<footer>
+  <p><span class="flogo">◈ Ricardo Agent</span> — crafted by <a href="https://github.com/wangRicardo">wangRicardo</a> ·
+  <a href="https://github.com/wangRicardo/geoagent">GitHub</a> · MIT License</p>
+</footer>
+</body>
+</html>
