@@ -1,6 +1,6 @@
 # Ricardo Agent —— 你的地球物理 × 机器学习个人 Agent
 
-一个从零开始、可自己持续扩展的研究 agent 框架（当前版本 **v0.3.0**，内置 27 个工具，可在任意文件夹工作）。核心理念：**模型可以换，工具是你的资产**。
+一个从零开始、可自己持续扩展的研究 agent 框架（当前版本 **v0.3.0**，内置 35 个工具，可在任意文件夹工作）。核心理念：**模型可以换，工具是你的资产**。
 agent 的智力来自 LLM，价值来自你亲手写的领域工具（读 SEG-Y、看测井曲线、快速建模……）。
 
 官网：<https://wangricardo.github.io/geoagent/>
@@ -87,6 +87,12 @@ def wavelet_ricker(freq_hz: float, dt_ms: float = 1.0, length_ms: float = 100.0)
 - 工具结果一律转成文本回传 LLM（`ToolRegistry.execute`），方便任何模型接入与调试。
 - 工具内部异常被捕获为 `ERROR: ...` 文本返回，让模型自行纠正参数而不是崩溃。
 - `max_tool_rounds` 限制单轮对话的工具调用次数，防止失控循环。
+
+## 数据与图件（v0.4.0）
+
+- 数据下载：USGS 地震目录、IRIS 波形（SAC）、全球事件查询（需 `pip install obspy`）
+- 图片生成：地震剖面变面积图、交会图（自带相关系数）、测井曲线并排图、时序对比图（自动保存 PNG 到工作区）
+- 文献：Crossref 检索/DOI 查询，直接生成 BibTeX 可存为 .bib 文件
 
 ## LaTeX 支持（v0.3.1）
 

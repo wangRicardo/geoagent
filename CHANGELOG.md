@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.0 (2026-09-05)
+
+科研全流程补全（35 个工具）。
+
+- 数据获取：`fetch_usgs_earthquakes`（USGS 地震目录）、`fetch_iris_events`（全球事件，USGS FDSN）、`fetch_iris_waveform`（IRIS 波形下载为 SAC）
+- 图片生成：`plot_seismic_section`（变面积剖面）、`plot_crossplot`（交会图+相关系数）、`plot_well_logs`（多曲线并排）、`plot_time_series`（时序叠加）
+- 文献：`citation_lookup`（Crossref 检索/DOI 精确查询 → BibTeX，可追加保存 .bib）
+- 新增依赖分组：`pip install "geoagent-ml[data]"`（obspy, requests）、`[plot]`（matplotlib）
+
 ## v0.3.1 (2026-09-05)
 
 - LaTeX 工具链：latex_check / latex_write（中文论文模板）/ latex_compile（xelatex 两遍，自动识别 ctex，错误日志提取）

@@ -75,3 +75,27 @@ def test_latex_tools(tmp_path, monkeypatch):
     registry.execute("latex_write", {"filename": "bad.tex",
                                      "content": "\documentclass{article}\begin{document}\broken"})
     assert "ERROR" in registry.execute("latex_compile", {"filename": "bad.tex", "engine": "pdflatex", "passes": 1})
+
+
+def test_plot_tools(tmp_path, monkeypatch):
+    matplotlib = __import__("matplotlib")
+    monkeypatch.chdir(tmp_path)
+    rng = np.random.default_rng(1)
+    t = np.arange(200) / 50.0
+    seis = [(np.sin(2 * np.pi * 8 * t) + rng.normal(0, .05, 200)).tolist() for _ in range(10)]
+    for name, kwargs in [
+        ("plot_seismic_section", {"traces": seis, "dt_ms": 20}),
+        ("plot_crossplot", {"x": rng.normal(0, 1, 50).tolist(), "y": rng.normal(0, 1, 50).tolist()}),
+        ("plot_well_logs", {"curves": [rng.normal(80, 10, 50).tolist()], "names": ["GR"]}),
+        ("plot_time_series", {"series": [np.sin(2 * np.pi * 5 * t).tolist()], "labels": ["s"]}),
+    ]:
+        out = registry.execute(name, kwargs)
+        assert "已保存" in out, out
+    assert (tmp_path / "seismic_section.png").exists()
+    assert (tmp_path / "crossplot.png").exists()
+
+
+def test_citation_lookup_offline_error():
+    # 网络不可用时必须返回 ERROR 文本而不是抛异常
+    out = registry.execute("citation_lookup", {"query": "nonexistent-query-xyz", "rows": 1})
+    assert out.startswith("ERROR") or "没有找到" in out or "DOI" in out
