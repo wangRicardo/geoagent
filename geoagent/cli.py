@@ -147,8 +147,12 @@ def main() -> None:
     args = [a for a in sys.argv[1:] if a not in ("--demo", "--simple")]
     demo = len(args) != len(sys.argv[1:])
     workdir = next((a for a in args if not a.startswith("-") and
-                    a not in ("tools", "run", "chat", "help")), None)
-    cmd = next((a for a in args if a in ("tools", "run", "chat")), "chat" if workdir else "tools")
+                    a not in ("tools", "run", "chat", "gui", "help")), None)
+    cmd = next((a for a in args if a in ("tools", "run", "chat", "gui")), "chat" if workdir else "tools")
+    if cmd == "gui":
+        from .gui import launch
+        launch(workdir)
+        return
     agent = GeoAgent(workdir=workdir)
 
     if cmd == "tools":

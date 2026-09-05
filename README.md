@@ -88,6 +88,12 @@ def wavelet_ricker(freq_hz: float, dt_ms: float = 1.0, length_ms: float = 100.0)
 - 工具内部异常被捕获为 `ERROR: ...` 文本返回，让模型自行纠正参数而不是崩溃。
 - `max_tool_rounds` 限制单轮对话的工具调用次数，防止失控循环。
 
+## 桌面版（v0.4.1）
+
+```bash
+ricardo gui              # 图形界面：文件夹工作区 + 提供商/模型/思考强度下拉热切换
+```
+
 ## 数据与图件（v0.4.0）
 
 - 数据下载：USGS 地震目录、IRIS 波形（SAC）、全球事件查询（需 `pip install obspy`）

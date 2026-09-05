@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geoagent-ml"
-version = "0.4.0"
+version = "0.4.1"
 description = "Ricardo Agent — a personal AI agent for geophysics & machine learning research — 地球物理 × 机器学习个人研究 Agent"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,6 +32,7 @@ dev = ["pytest>=7"]
 
 [project.scripts]
 ricardo = "geoagent.cli:main"
+ricardo-gui = "geoagent.gui:launch"
 geoagent = "geoagent.cli:main"
 
 [project.urls]
