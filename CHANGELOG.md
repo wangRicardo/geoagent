@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.1 (2026-09-05)
+
+- LaTeX 工具链：latex_check / latex_write（中文论文模板）/ latex_compile（xelatex 两遍，自动识别 ctex，错误日志提取）
+
 ## v0.3.0 (2026-09-05)
 
 更名为 **Ricardo Agent**。

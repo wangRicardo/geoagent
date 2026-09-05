@@ -60,3 +60,18 @@ def test_velocity_to_depth():
     out = registry.execute("velocity_to_depth",
                            {"vp_ms": 3000.0, "two_way_time_ms": [1000.0, 2000.0]})
     assert "1500.0" in out and "3000.0" in out
+
+
+def test_latex_tools(tmp_path, monkeypatch):
+    import shutil
+    if not shutil.which("xelatex"):
+        import pytest
+        pytest.skip("本机无 LaTeX 引擎")
+    monkeypatch.chdir(tmp_path)
+    assert "xelatex" in registry.execute("latex_check", {})
+    assert "已写入" in registry.execute("latex_write", {"filename": "t.tex", "title": "测试"})
+    out = registry.execute("latex_compile", {"filename": "t.tex"})
+    assert "编译成功" in out and (tmp_path / "t.pdf").exists()
+    registry.execute("latex_write", {"filename": "bad.tex",
+                                     "content": "\documentclass{article}\begin{document}\broken"})
+    assert "ERROR" in registry.execute("latex_compile", {"filename": "bad.tex", "engine": "pdflatex", "passes": 1})
