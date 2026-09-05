@@ -1,6 +1,6 @@
-# GeoAgent —— 你的地球物理 × 机器学习个人 Agent
+# Ricardo Agent —— 你的地球物理 × 机器学习个人 Agent
 
-一个从零开始、可自己持续扩展的研究 agent 框架（当前版本 **v0.2.0**，内置 20 个领域工具）。核心理念：**模型可以换，工具是你的资产**。
+一个从零开始、可自己持续扩展的研究 agent 框架（当前版本 **v0.3.0**，内置 24 个工具，可在任意文件夹工作）。核心理念：**模型可以换，工具是你的资产**。
 agent 的智力来自 LLM，价值来自你亲手写的领域工具（读 SEG-Y、看测井曲线、快速建模……）。
 
 官网：<https://wangricardo.github.io/geoagent/>
@@ -87,3 +87,11 @@ def wavelet_ricker(freq_hz: float, dt_ms: float = 1.0, length_ms: float = 100.0)
 - 工具结果一律转成文本回传 LLM（`ToolRegistry.execute`），方便任何模型接入与调试。
 - 工具内部异常被捕获为 `ERROR: ...` 文本返回，让模型自行纠正参数而不是崩溃。
 - `max_tool_rounds` 限制单轮对话的工具调用次数，防止失控循环。
+
+## v0.3.0 新特性
+
+- **任意文件夹工作**：`ricardo chat D:\课题\工区A` 或对话内 `/cd 路径`，agent 的工作区随你切换（类似 codex / claude code）
+- **文件系统工具**：list_files / read_file / write_file / run_python，全部限制在工作目录内
+- **多提供商**：内置 openai / deepseek / zhipu / moonshot / qwen / ollama 预设
+- **对话内热切换**：`/provider deepseek`、`/model deepseek-reasoner`、`/thinking high`（off/low/medium/high），配置持久化到 `~/.geoagent/config.json`
+- API 密钥按提供商环境变量自动识别（DEEPSEEK_API_KEY 等），或统一用 `RICARDO_API_KEY`

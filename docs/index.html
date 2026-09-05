@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GeoAgent — 地球物理 × 机器学习个人研究 Agent</title>
-<meta name="description" content="GeoAgent 是一个开源的个人 AI agent 框架，专为地球物理与机器学习研究者打造：SEG-Y/LAS 数据工具、地震正演、ML 基线建模、持久化研究记忆。">
+<title>Ricardo Agent — 地球物理 × 机器学习个人研究 Agent</title>
+<meta name="description" content="Ricardo Agent 是一个开源的个人 AI agent 框架，专为地球物理与机器学习研究者打造：SEG-Y/LAS 数据工具、地震正演、ML 基线建模、持久化研究记忆。">
 <style>
   :root {
     --bg: #0a0e1a;
@@ -92,7 +92,7 @@
 <div class="aurora"></div><div class="grid-bg"></div>
 
 <nav><div class="inner">
-  <div class="logo">◈ <span>GeoAgent</span></div>
+  <div class="logo">◈ <span>Ricardo Agent</span></div>
   <div>
     <a href="#features">特性</a>
     <a href="#quickstart">快速开始</a>
@@ -102,16 +102,16 @@
 </div></nav>
 
 <header>
-  <div class="badge">✦ v0.2.0 · 开源 · MIT License</div>
+  <div class="badge">✦ v0.3.0 · 开源 · MIT License</div>
   <h1>你的地球物理研究<br>值得一个<span class="grad">懂行的 Agent</span></h1>
-  <p class="subtitle">GeoAgent 把 SEG-Y 地震数据、LAS 测井、地震正演与机器学习基线建模，
+  <p class="subtitle">Ricardo Agent 把 SEG-Y 地震数据、LAS 测井、地震正演与机器学习基线建模，
   装进一个模型无关的 AI Agent 框架 —— 模型可以随时更换，工具是你的科研资产。</p>
   <div class="cta">
     <a class="btn btn-primary" href="#quickstart">立即开始</a>
     <a class="btn btn-ghost" href="https://github.com/wangRicardo/geoagent">查看源码</a>
   </div>
   <div class="stats">
-    <div class="stat"><b>20</b><span>内置领域工具</span></div>
+    <div class="stat"><b>24</b><span>内置领域工具</span></div>
     <div class="stat"><b>4</b><span>专业方向</span></div>
     <div class="stat"><b>0</b><span>供应商锁定</span></div>
   </div>
@@ -126,7 +126,7 @@
     <div class="card"><div class="icon">📈</div><h3>地震正演模拟</h3><p>Ricker 子波、1D 褶积合成记录、调谐厚度估算 —— 为 ML 生成可控的训练数据。</p></div>
     <div class="card"><div class="icon">🤖</div><h3>ML 快速基线</h3><p>数据画像、自动分类/回归随机森林基线、交叉验证、PCA、共线性预警、混淆矩阵报告。</p></div>
     <div class="card"><div class="icon">🧠</div><h3>持久化研究记忆</h3><p>研究结论与实验记录保存在本地 JSON，跨会话可检索，agent 越用越懂你的课题。</p></div>
-    <div class="card"><div class="icon">🔌</div><h3>模型无关设计</h3><p>任何 OpenAI 兼容接口都能接入，没有 API key 也能离线使用全部工具。</p></div>
+    <div class="card"><div class="icon">🔌</div><h3>多提供商热切换</h3><p>OpenAI / DeepSeek / 智谱 / Moonshot / 通义 / Ollama 一键切换，对话内 /model /thinking 实时换模型与思考强度。</p></div>
   </div>
 </section>
 
@@ -142,13 +142,13 @@
 pip install geoagent-ml[all]
 
 <span class="cm"># 离线使用（无需 API key）</span>
-geoagent tools
-geoagent run ricker_wavelet <span class="str">"freq_hz=30"</span>
+ricardo tools
+ricardo run ricker_wavelet <span class="str">"freq_hz=30"</span>
 
 <span class="cm"># 在线对话（任意 OpenAI 兼容端点）</span>
 <span class="kw">set</span> GEOAGENT_API_KEY=sk-...
 <span class="kw">set</span> GEOAGENT_BASE_URL=https://api.openai.com/v1
-geoagent chat</pre>
+ricardo chat</pre>
   </div>
   <div class="code-wrap" style="margin-top:24px">
     <div class="code-head">
@@ -179,7 +179,7 @@ geoagent chat</pre>
 </section>
 
 <footer>
-  <p>◈ GeoAgent — crafted by <a href="https://github.com/wangRicardo">wangRicardo</a> ·
+  <p>◈ Ricardo Agent — crafted by <a href="https://github.com/wangRicardo">wangRicardo</a> ·
   <a href="https://github.com/wangRicardo/geoagent">GitHub</a> · MIT License</p>
 </footer>
 

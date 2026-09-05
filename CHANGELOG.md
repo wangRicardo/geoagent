@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.0 (2026-09-05)
+
+更名为 **Ricardo Agent**。
+
+- 任意文件夹工作：`ricardo chat <文件夹>` 或对话内 `/cd 路径`，类似 codex / claude code 的工作区
+- 文件系统工具：`list_files` / `read_file` / `write_file` / `run_python`（限制在工作目录内）
+- 多提供商：内置 openai / deepseek / zhipu / moonshot / qwen / ollama 预设，持久化到 `~/.geoagent/config.json`
+- 对话内热切换：`/provider` `/model` `/thinking`（off/low/medium/high → reasoning_effort）/`/clear`
+- CLI 启动横幅（ASCII LOGO）与状态栏（提供商/模型/思考强度/在线状态/工作目录）
+
 ## v0.2.0 (2026-09-05)
 
 首个公开发布版本。
