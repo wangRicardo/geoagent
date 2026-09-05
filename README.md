@@ -1,6 +1,6 @@
 # Ricardo Agent —— 你的地球物理 × 机器学习个人 Agent
 
-一个从零开始、可自己持续扩展的研究 agent 框架（当前版本 **v0.3.0**，内置 35 个工具，可在任意文件夹工作）。核心理念：**模型可以换，工具是你的资产**。
+一个从零开始、可自己持续扩展的研究 agent 框架（当前版本 **v0.3.0**，内置 37 个工具，可在任意文件夹工作）。核心理念：**模型可以换，工具是你的资产**。
 agent 的智力来自 LLM，价值来自你亲手写的领域工具（读 SEG-Y、看测井曲线、快速建模……）。
 
 官网：<https://wangricardo.github.io/geoagent/>
@@ -93,6 +93,12 @@ def wavelet_ricker(freq_hz: float, dt_ms: float = 1.0, length_ms: float = 100.0)
 ```bash
 ricardo gui              # 图形界面：文件夹工作区 + 提供商/模型/思考强度下拉热切换
 ```
+
+## SEG-Y 写入与对话导出（v0.4.2）
+
+- `segy_write`：把合成记录/处理后的道集写成标准 SEG-Y（Petrel 等软件可读）
+- `segy_extract_window`：指定道时窗振幅提取
+- 对话历史自动裁剪 + `/export` 导出 Markdown 研究日志（CLI 与 GUI 均支持）
 
 ## 数据与图件（v0.4.0）
 

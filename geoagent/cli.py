@@ -32,6 +32,7 @@ SLASH_HELP = """对话内命令:
   /thinking [级别]          思考强度: {t}
   /cd [路径]                切换工作文件夹（类似 codex 选工作区）
   /clear                   清空对话历史
+  /export [文件名.md]       导出对话为 Markdown 研究日志（存到工作区）
   /tools                   列出工具
   /config                  配置保存位置: ~/.geoagent/config.json
 其余输入都会发给模型。"quit" 或 Ctrl+C 退出。""".format(
@@ -64,6 +65,9 @@ def _handle_slash(line: str, agent: GeoAgent) -> str | None:
     if cmd == "/clear":
         agent.history = []
         return "对话历史已清空。"
+    if cmd == "/export":
+        path = arg or f"chat_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+        return agent.export_transcript(path)
     if cmd == "/tools":
         return "\n".join(f"[{t.category}] {t.name}: {t.description[:50]}" for t in registry.list())
     if cmd == "/config":

@@ -32,6 +32,7 @@ class GeoAgent:
     ) -> None:
         self.registry = registry or default_registry
         self.max_tool_rounds = max_tool_rounds
+        self.max_history = 40  # 自动裁剪，防止长对话撑爆上下文
         self.system_prompt = system_prompt
         self.config = AgentConfig()
         self.history: List[Dict[str, Any]] = []
@@ -88,6 +89,36 @@ class GeoAgent:
     def run_tool(self, name: str, args: Dict[str, Any]) -> str:
         return self.registry.execute(name, args)
 
+    def _trim_history(self) -> None:
+        """超出上限时从最旧的消息开始丢弃（保留成对的 user/assistant 轮次）。"""
+        if len(self.history) <= self.max_history:
+            return
+        drop = len(self.history) - self.max_history
+        drop += drop % 2  # 从 user 轮开始成对丢，保证首条是 user
+        self.history = self.history[drop:]
+
+    def export_transcript(self, path: str) -> str:
+        """把当前对话导出为 Markdown 研究日志（写到工作目录内）。"""
+        import re
+        root = os.getcwd()
+        full = os.path.abspath(os.path.join(root, path))
+        if os.path.commonpath([root, full]) != root:
+            return f"ERROR: 路径越出工作目录: {path}"
+        lines = [f"# Ricardo Agent 对话记录", f"",
+                 f"- 时间: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                 f"- 工作区: `{self.workdir}`",
+                 f"- 模型: {self.config.provider}/{self.config.model} (思考: {self.config.thinking})",
+                 ""]
+        for m in self.history:
+            role = {"user": "## 🧑 你", "assistant": "## 🤖 Ricardo"}.get(m["role"], f"## {m['role']}")
+            content = m["content"]
+            if m["role"] == "user":
+                content = re.sub(r"\[当前工作目录[^\]]*\]\s*", "", content)
+            lines += [role, "", content, ""]
+        with open(full, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        return f"对话已导出: {full}（{len(self.history)} 条消息）"
+
     # -- 对话 ----------------------------------------------------------------
 
     def _request_params(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -103,6 +134,7 @@ class GeoAgent:
     def chat(self, user_message: str) -> str:
         """发送一条消息；在线模式下自动执行模型请求的工具并把结果回传。"""
         self.history.append({"role": "user", "content": user_message})
+        self._trim_history()
         if not self.online:
             reply = (
                 "[offline 模式] 未检测到 API 密钥。请设置提供商对应的环境变量"

@@ -186,6 +186,10 @@ class ChatWindow:
             return
         self.input.delete("1.0", "end")
         self._append("你: " + text, "user")
+        if text.startswith("/"):
+            from .cli import _handle_slash
+            self._append(_handle_slash(text, self.agent) or "", "system")
+            return
         self.btn_send.configure(state="disabled")
         threading.Thread(target=self._worker, args=(text,), daemon=True).start()
 

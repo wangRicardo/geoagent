@@ -6,6 +6,7 @@ SEG-Y / LAS 相关工具依赖 segyio / lasio，未安装时调用会返回提�
 
 from __future__ import annotations
 
+import os
 from typing import List
 
 import numpy as np
@@ -58,6 +59,72 @@ def segy_trace_amplitude(path: str, trace_index: int) -> str:
         f"min={amp.min():.4g}, max={amp.max():.4g}, "
         f"mean={amp.mean():.4g}, rms={np.sqrt(np.mean(amp ** 2)):.4g}\n"
         f"前50采样: {np.round(amp[:50], 4).tolist()}"
+    )
+
+
+@registry.register(category="geophysics")
+def segy_write(
+    traces: List[List[float]],
+    dt_ms: float = 1.0,
+    filename: str = "output.sgy",
+) -> str:
+    """把多道地震数据写入 SEG-Y 文件（IEEE float32，rev1）。
+
+    traces 每行一道。适合保存合成记录、滤波/处理后的道集，
+    写出的文件可被 segyio、Petrel 等标准软件读取。
+    """
+    try:
+        import segyio
+    except ImportError:
+        return _missing("segyio")
+    data = np.asarray(traces, dtype=np.float32)
+    if data.ndim != 2:
+        return f"ERROR: traces 需是二维列表（每行一道），当前 {data.ndim} 维"
+    root = os.getcwd()
+    full = os.path.abspath(os.path.join(root, filename))
+    if os.path.commonpath([root, full]) != root:
+        return f"ERROR: 路径越出工作目录: {filename}"
+    nt, ns = data.shape
+    spec = segyio.spec()
+    spec.sorting = segyio.TraceSortingFormat.INLINE_SORTING
+    spec.format = 5  # IEEE float32
+    spec.samples = np.arange(ns) * dt_ms  # segyio.create 按毫秒解释，写为 µs 间隔
+    spec.tracecount = nt
+    spec.ilines = np.arange(nt) + 1  # 每道视为一条 inline，方便几何读取
+    with segyio.create(full, spec) as f:
+        for i in range(nt):
+            f.trace[i] = data[i]
+            f.header[i] = {
+                segyio.TraceField.TRACE_SEQUENCE_LINE: i + 1,
+                segyio.TraceField.offset: 0,
+                segyio.TraceField.SourceX: i * 1000,  # 假道距 1 km，方便几何浏览
+                segyio.TraceField.INLINE_3D: i + 1,
+            }
+    return (
+        f"SEG-Y 已写入: {filename}（{os.path.getsize(full):,} 字节）\n"
+        f"  {nt} 道 x {ns} 采样, dt={dt_ms}ms, format=IEEE float32"
+    )
+
+
+@registry.register(category="geophysics")
+def segy_extract_window(path: str, trace_index: int, t_start_ms: float, t_end_ms: float) -> str:
+    """提取 SEG-Y 指定道在时间窗 [t_start_ms, t_end_ms] 内的振幅与统计量。"""
+    try:
+        import segyio
+    except ImportError:
+        return _missing("segyio")
+    with segyio.open(path, ignore_geometry=True) as f:
+        if not (0 <= trace_index < f.tracecount):
+            return f"ERROR: trace_index 超出范围 [0, {f.tracecount - 1}]"
+        t = f.samples
+        if t_start_ms < t[0] or t_end_ms > t[-1] or t_start_ms >= t_end_ms:
+            return f"ERROR: 时间窗无效（文件范围 {t[0]:.0f}~{t[-1]:.0f} ms）"
+        amp = f.trace[trace_index]
+        w = amp[(t >= t_start_ms) & (t <= t_end_ms)]
+    return (
+        f"道 {trace_index} @ {t_start_ms:.0f}~{t_end_ms:.0f} ms: {w.size} 个采样\n"
+        f"min={w.min():.4g}, max={w.max():.4g}, rms={np.sqrt(np.mean(w**2)):.4g}\n"
+        f"数值: {np.round(w[:100], 4).tolist()}"
     )
 
 

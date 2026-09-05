@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.4.2 (2026-09-05)
+
+功能审核与补全（37 个工具）。
+
+- `segy_write`：多道地震数据写入 SEG-Y（IEEE float32，segyio 兼容，时间轴已验证）
+- `segy_extract_window`：指定道时窗振幅提取
+- 对话上下文自动裁剪（默认保留最近 40 条，成对丢弃防撑爆上下文）
+- `/export` 命令（CLI + GUI）：对话导出为 Markdown 研究日志
+- GUI 支持全部斜杠命令（/cd /model /provider /thinking /export 等）
+- 新增 SEGY 读写回环与历史裁剪测试（12 项全部通过）
+
 ## v0.4.1 (2026-09-05)
 
 桌面版本发布（`ricardo gui` / `ricardo-gui`）。

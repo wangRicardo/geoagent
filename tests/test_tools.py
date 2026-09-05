@@ -99,3 +99,38 @@ def test_citation_lookup_offline_error():
     # 网络不可用时必须返回 ERROR 文本而不是抛异常
     out = registry.execute("citation_lookup", {"query": "nonexistent-query-xyz", "rows": 1})
     assert out.startswith("ERROR") or "没有找到" in out or "DOI" in out
+
+
+def test_segy_write_read_roundtrip(tmp_path, monkeypatch):
+    segyio = __import__("segyio")
+    monkeypatch.chdir(tmp_path)
+    rng = np.random.default_rng(3)
+    t = np.arange(200) * 0.002
+    traces = [(np.sin(2 * np.pi * 20 * t) * np.exp(-3 * t) + rng.normal(0, .02, 200)).tolist()
+              for _ in range(12)]
+    out = registry.execute("segy_write", {"traces": traces, "dt_ms": 2.0, "filename": "syn.sgy"})
+    assert "已写入" in out
+    info = registry.execute("segy_info", {"path": "syn.sgy"})
+    assert "12" in info and "采样" in info
+    amp = registry.execute("segy_trace_amplitude", {"path": "syn.sgy", "trace_index": 0})
+    assert "rms=" in amp
+    win = registry.execute("segy_extract_window",
+                           {"path": "syn.sgy", "trace_index": 0, "t_start_ms": 100, "t_end_ms": 200})
+    assert "个采样" in win
+
+
+def test_history_trim_and_export(tmp_path, monkeypatch):
+    from geoagent import GeoAgent
+    monkeypatch.chdir(tmp_path)
+    agent = GeoAgent()
+    agent.max_history = 4
+    for i in range(6):
+        agent.history.append({"role": "user", "content": f"q{i}"})
+        agent.history.append({"role": "assistant", "content": f"a{i}"})
+    agent._trim_history()
+    assert len(agent.history) == 4
+    assert agent.history[0]["content"] == "q4"  # 保留最近 4 条，从 user 轮开始
+    out = agent.export_transcript("log.md")
+    assert "已导出" in out
+    text = (tmp_path / "log.md").read_text(encoding="utf-8")
+    assert "a5" in text and "Ricardo" in text
