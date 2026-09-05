@@ -24,15 +24,16 @@
   ::selection { background: rgba(34,211,238,.3); }
 
   /* 背景装饰 */
-  .aurora { position: fixed; inset: 0; z-index: -2; overflow: hidden; }
+  body { position: relative; }
+  .aurora { position: absolute; inset: 0; z-index: -2; overflow: hidden; }
   .aurora::before, .aurora::after { content: ""; position: absolute; width: 60vw; height: 60vw; border-radius: 50%; filter: blur(120px); opacity: .18; }
   .aurora::before { background: #22d3ee; top: -25vw; left: -10vw; }
   .aurora::after { background: #818cf8; top: 10vw; right: -20vw; }
-  .grid-bg { position: fixed; inset: 0; z-index: -1;
+  .grid-bg { position: absolute; inset: 0; z-index: -1;
     background-image: linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
     background-size: 48px 48px; mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, #000 40%, transparent 100%); }
 
-  nav { position: fixed; top: 0; width: 100%; z-index: 50; backdrop-filter: blur(14px); background: rgba(10,14,26,.65); border-bottom: 1px solid var(--border); }
+  nav { position: absolute; top: 0; width: 100%; z-index: 50; backdrop-filter: blur(14px); background: rgba(10,14,26,.65); border-bottom: 1px solid var(--border); }
   nav .inner { max-width: 1080px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }
   .logo { font-weight: 800; font-size: 1.15rem; letter-spacing: .5px; }
   .logo span { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
@@ -83,8 +84,7 @@
   footer { border-top: 1px solid var(--border); padding: 40px 24px; text-align: center; color: var(--muted); font-size: .88rem; }
   footer a { color: var(--accent); text-decoration: none; }
 
-  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s ease; }
-  .reveal.on { opacity: 1; transform: none; }
+  .reveal { opacity: 1; }
   @media (max-width: 640px) { nav a:not(.btn-nav) { display: none; } .stats { gap: 28px; } }
 </style>
 </head>
@@ -183,9 +183,5 @@ geoagent chat</pre>
   <a href="https://github.com/wangRicardo/geoagent">GitHub</a> · MIT License</p>
 </footer>
 
-<script>
-  const io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && e.target.classList.add('on')), {threshold: .12});
-  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
-</script>
 </body>
 </html>
