@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.6.0 (2026-09-05)
+
+文献 RAG（44 个工具）。
+
+- `arxiv_search`：arXiv 检索（支持 cat:physics.geo-ph 等语法）
+- `arxiv_download`：下载论文 PDF 并自动入库
+- `lit_ingest`：PDF/TXT/MD（含目录递归）解析入库，段落+句子混合分块（约 1200 字符、重叠 200，带页码）
+- `lit_search`：本地 TF-IDF 余弦检索（纯 numpy，中文按字 bigram，离线可用）
+- `lit_ask`：RAG 问答——检索相关段落 + LLM 综合回答并标注来源编号
+- `lit_status`：文献库状态
+- 索引按工作区隔离（<工作区>/.ricardo_lit/），每个课题一套文献库
+- 新增依赖分组：[rag]（pypdf）
+
 ## v0.5.0 (2026-09-05)
 
 体验与韧性大版本。

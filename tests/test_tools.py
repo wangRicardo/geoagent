@@ -176,3 +176,24 @@ def test_offline_chat_events(tmp_path, monkeypatch):
     events = []
     out = agent.chat("hi", on_event=events.append)
     assert "offline" in out and events == []  # 离线路径不产生流事件
+
+
+def test_lit_rag(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    paper = "\n\n".join(
+        f"Section {i}: Ambient noise tomography uses surface wave dispersion "
+        f"curves from seismic interferometry. Phase velocity maps at {i}s period "
+        f"reveal crustal structure beneath the array. " * 3
+        for i in range(1, 15)
+    )
+    (tmp_path / "paper.txt").write_text(paper, encoding="utf-8")
+    out = registry.execute("lit_ingest", {"paths": ["."]})
+    assert "入库完成" in out
+    assert "paper.txt" in registry.execute("lit_status", {})
+    out = registry.execute("lit_search", {"query": "ambient noise surface wave dispersion", "k": 3})
+    assert "[0." in out
+    # 离线 ask：给出检索结果并提示需要密钥
+    out = registry.execute("lit_ask", {"question": "什么是 ambient noise tomography?"})
+    assert "ERROR" in out and "密钥" in out
+    out = registry.execute("arxiv_download", {"arxiv_id": "bad-id"})
+    assert "ERROR" in out
