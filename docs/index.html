@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GeoAgent — 地球物理 × 机器学习个人研究 Agent</title>
+<meta name="description" content="GeoAgent 是一个开源的个人 AI agent 框架，专为地球物理与机器学习研究者打造：SEG-Y/LAS 数据工具、地震正演、ML 基线建模、持久化研究记忆。">
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --bg2: #101828;
+    --card: rgba(255,255,255,.04);
+    --border: rgba(255,255,255,.09);
+    --text: #e6eaf2;
+    --muted: #94a3b8;
+    --accent: #22d3ee;
+    --accent2: #818cf8;
+    --accent3: #34d399;
+    --grad: linear-gradient(120deg, #22d3ee, #818cf8 55%, #f472b6);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { background: var(--bg); color: var(--text); font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; line-height: 1.7; overflow-x: hidden; }
+  ::selection { background: rgba(34,211,238,.3); }
+
+  /* 背景装饰 */
+  .aurora { position: fixed; inset: 0; z-index: -2; overflow: hidden; }
+  .aurora::before, .aurora::after { content: ""; position: absolute; width: 60vw; height: 60vw; border-radius: 50%; filter: blur(120px); opacity: .18; }
+  .aurora::before { background: #22d3ee; top: -25vw; left: -10vw; }
+  .aurora::after { background: #818cf8; top: 10vw; right: -20vw; }
+  .grid-bg { position: fixed; inset: 0; z-index: -1;
+    background-image: linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
+    background-size: 48px 48px; mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, #000 40%, transparent 100%); }
+
+  nav { position: fixed; top: 0; width: 100%; z-index: 50; backdrop-filter: blur(14px); background: rgba(10,14,26,.65); border-bottom: 1px solid var(--border); }
+  nav .inner { max-width: 1080px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-weight: 800; font-size: 1.15rem; letter-spacing: .5px; }
+  .logo span { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  nav a { color: var(--muted); text-decoration: none; margin-left: 26px; font-size: .92rem; transition: color .2s; }
+  nav a:hover { color: var(--accent); }
+  nav .btn-nav { background: var(--grad); color: #0a0e1a; padding: 8px 18px; border-radius: 999px; font-weight: 700; margin-left: 26px; }
+
+  header { max-width: 1080px; margin: 0 auto; padding: 170px 24px 90px; text-align: center; }
+  .badge { display: inline-flex; gap: 8px; align-items: center; border: 1px solid var(--border); background: var(--card); border-radius: 999px; padding: 6px 16px; font-size: .85rem; color: var(--accent); margin-bottom: 28px; }
+  h1 { font-size: clamp(2.4rem, 6vw, 4.2rem); font-weight: 900; line-height: 1.15; letter-spacing: -1px; }
+  h1 .grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .subtitle { color: var(--muted); font-size: 1.18rem; max-width: 680px; margin: 26px auto 40px; }
+  .cta { display: inline-flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+  .btn { padding: 14px 32px; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: 1rem; transition: transform .2s, box-shadow .2s; }
+  .btn:hover { transform: translateY(-2px); }
+  .btn-primary { background: var(--grad); color: #0a0e1a; box-shadow: 0 8px 30px rgba(34,211,238,.25); }
+  .btn-ghost { border: 1px solid var(--border); color: var(--text); background: var(--card); }
+
+  .stats { display: flex; gap: 48px; justify-content: center; margin-top: 64px; flex-wrap: wrap; }
+  .stat b { font-size: 1.9rem; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .stat span { display: block; color: var(--muted); font-size: .85rem; }
+
+  section { max-width: 1080px; margin: 0 auto; padding: 80px 24px; }
+  h2 { font-size: 2rem; font-weight: 800; text-align: center; margin-bottom: 12px; }
+  .sec-sub { text-align: center; color: var(--muted); margin-bottom: 52px; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 28px; transition: transform .25s, border-color .25s; }
+  .card:hover { transform: translateY(-4px); border-color: rgba(34,211,238,.4); }
+  .card .icon { font-size: 1.8rem; width: 52px; height: 52px; display: grid; place-items: center; border-radius: 14px; background: linear-gradient(135deg, rgba(34,211,238,.15), rgba(129,140,248,.15)); border: 1px solid var(--border); margin-bottom: 18px; }
+  .card h3 { font-size: 1.08rem; margin-bottom: 8px; }
+  .card p { color: var(--muted); font-size: .92rem; }
+
+  .code-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+  .code-head { display: flex; gap: 8px; padding: 14px 18px; border-bottom: 1px solid var(--border); align-items: center; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .code-head .name { margin-left: 10px; color: var(--muted); font-size: .82rem; font-family: Consolas, monospace; }
+  pre { padding: 24px; overflow-x: auto; font-family: Consolas, "JetBrains Mono", monospace; font-size: .88rem; line-height: 1.75; }
+  .kw { color: #c084fc; } .fn { color: #22d3ee; } .str { color: #86efac; } .cm { color: #64748b; } .num { color: #fbbf24; }
+
+  .roadmap { position: relative; max-width: 720px; margin: 0 auto; padding-left: 32px; border-left: 2px solid rgba(34,211,238,.25); }
+  .step { position: relative; margin-bottom: 40px; }
+  .step::before { content: ""; position: absolute; left: -41px; top: 6px; width: 16px; height: 16px; border-radius: 50%; background: var(--grad); box-shadow: 0 0 16px rgba(34,211,238,.6); }
+  .step h3 { font-size: 1.05rem; }
+  .step p { color: var(--muted); font-size: .92rem; }
+  .tag { display: inline-block; font-size: .72rem; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); margin-bottom: 6px; color: var(--accent3); }
+
+  footer { border-top: 1px solid var(--border); padding: 40px 24px; text-align: center; color: var(--muted); font-size: .88rem; }
+  footer a { color: var(--accent); text-decoration: none; }
+
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s ease; }
+  .reveal.on { opacity: 1; transform: none; }
+  @media (max-width: 640px) { nav a:not(.btn-nav) { display: none; } .stats { gap: 28px; } }
+</style>
+</head>
+<body>
+<div class="aurora"></div><div class="grid-bg"></div>
+
+<nav><div class="inner">
+  <div class="logo">◈ <span>GeoAgent</span></div>
+  <div>
+    <a href="#features">特性</a>
+    <a href="#quickstart">快速开始</a>
+    <a href="#roadmap">路线图</a>
+    <a class="btn-nav" href="https://github.com/wangRicardo/geoagent">GitHub ↗</a>
+  </div>
+</div></nav>
+
+<header>
+  <div class="badge">✦ v0.2.0 · 开源 · MIT License</div>
+  <h1>你的地球物理研究<br>值得一个<span class="grad">懂行的 Agent</span></h1>
+  <p class="subtitle">GeoAgent 把 SEG-Y 地震数据、LAS 测井、地震正演与机器学习基线建模，
+  装进一个模型无关的 AI Agent 框架 —— 模型可以随时更换，工具是你的科研资产。</p>
+  <div class="cta">
+    <a class="btn btn-primary" href="#quickstart">立即开始</a>
+    <a class="btn btn-ghost" href="https://github.com/wangRicardo/geoagent">查看源码</a>
+  </div>
+  <div class="stats">
+    <div class="stat"><b>20</b><span>内置领域工具</span></div>
+    <div class="stat"><b>4</b><span>专业方向</span></div>
+    <div class="stat"><b>0</b><span>供应商锁定</span></div>
+  </div>
+</header>
+
+<section id="features" class="reveal">
+  <h2>为地球物理研究者而生</h2>
+  <p class="sec-sub">每个工具都来自真实的科研工作流，写一个函数就能让 LLM 调用它。</p>
+  <div class="cards">
+    <div class="card"><div class="icon">🌍</div><h3>地震数据工具链</h3><p>SEG-Y 文件信息与道数据提取、FFT 频谱分析、Butterworth 滤波、TWT→深度转换，基于 segyio 与 numpy。</p></div>
+    <div class="card"><div class="icon">🛢️</div><h3>测井解释</h3><p>LAS 曲线浏览与读取，深度-数值对直接进对话，配合 ML 工具做岩性预测与曲线重构。</p></div>
+    <div class="card"><div class="icon">📈</div><h3>地震正演模拟</h3><p>Ricker 子波、1D 褶积合成记录、调谐厚度估算 —— 为 ML 生成可控的训练数据。</p></div>
+    <div class="card"><div class="icon">🤖</div><h3>ML 快速基线</h3><p>数据画像、自动分类/回归随机森林基线、交叉验证、PCA、共线性预警、混淆矩阵报告。</p></div>
+    <div class="card"><div class="icon">🧠</div><h3>持久化研究记忆</h3><p>研究结论与实验记录保存在本地 JSON，跨会话可检索，agent 越用越懂你的课题。</p></div>
+    <div class="card"><div class="icon">🔌</div><h3>模型无关设计</h3><p>任何 OpenAI 兼容接口都能接入，没有 API key 也能离线使用全部工具。</p></div>
+  </div>
+</section>
+
+<section id="quickstart" class="reveal">
+  <h2>三分钟上手</h2>
+  <p class="sec-sub">安装即用，扩展只需一个带 docstring 的 Python 函数。</p>
+  <div class="code-wrap">
+    <div class="code-head">
+      <div class="dot" style="background:#f87171"></div><div class="dot" style="background:#fbbf24"></div><div class="dot" style="background:#34d399"></div>
+      <span class="name">terminal</span>
+    </div>
+    <pre><span class="cm"># 安装</span>
+pip install geoagent-ml[all]
+
+<span class="cm"># 离线使用（无需 API key）</span>
+geoagent tools
+geoagent run ricker_wavelet <span class="str">"freq_hz=30"</span>
+
+<span class="cm"># 在线对话（任意 OpenAI 兼容端点）</span>
+<span class="kw">set</span> GEOAGENT_API_KEY=sk-...
+<span class="kw">set</span> GEOAGENT_BASE_URL=https://api.openai.com/v1
+geoagent chat</pre>
+  </div>
+  <div class="code-wrap" style="margin-top:24px">
+    <div class="code-head">
+      <div class="dot" style="background:#f87171"></div><div class="dot" style="background:#fbbf24"></div><div class="dot" style="background:#34d399"></div>
+      <span class="name">my_tool.py — 你的第一个领域工具</span>
+    </div>
+    <pre><span class="kw">from</span> geoagent <span class="kw">import</span> registry
+
+<span class="fn">@registry.register</span>(category=<span class="str">"geophysics"</span>)
+<span class="kw">def</span> <span class="fn">nmo_velocity</span>(t0_ms: <span class="kw">float</span>, vrms_ms: <span class="kw">float</span>, offset_m: <span class="kw">float</span>) -> <span class="kw">str</span>:
+    <span class="str">"""由 T0 与均方根速度计算给定偏移距的 NMO 时差。"""</span>
+    t = (t0_ms**2 + (offset_m / vrms_ms)**2 * 1e6) ** 0.5
+    <span class="kw">return</span> <span class="str">f"NMO 时差: {t - t0_ms:.2f} ms @ offset={offset_m} m"</span>
+
+<span class="cm"># 保存后，在线模式下 LLM 立刻就能调用 nmo_velocity —— 零胶水代码</span></pre>
+  </div>
+</section>
+
+<section id="roadmap" class="reveal">
+  <h2>研发路线图</h2>
+  <p class="sec-sub">从一个会调工具的助手，长成能独立做科研的 Agent。</p>
+  <div class="roadmap">
+    <div class="step"><span class="tag">✅ v0.2 已完成</span><h3>领域工具 + 工具循环 + 记忆</h3><p>地震/测井/正演/ML 四个方向的 20 个工具，function-calling 循环，本地研究笔记。</p></div>
+    <div class="step"><span class="tag">v0.3 计划中</span><h3>可视化与多模态</h3><p>matplotlib 剖面/交会图导出，配合视觉模型让 Agent「看图说话」。</p></div>
+    <div class="step"><span class="tag">v0.4 计划中</span><h3>深度学习工作流</h3><p>PyTorch 训练封装：断点续训、早停、地震相分类与去噪网络流水线。</p></div>
+    <div class="step"><span class="tag">v1.0 愿景</span><h3>自主科研 Agent</h3><p>多步任务规划、文献 RAG、实验追踪与 Agent 自评测基准。</p></div>
+  </div>
+</section>
+
+<footer>
+  <p>◈ GeoAgent — crafted by <a href="https://github.com/wangRicardo">wangRicardo</a> ·
+  <a href="https://github.com/wangRicardo/geoagent">GitHub</a> · MIT License</p>
+</footer>
+
+<script>
+  const io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && e.target.classList.add('on')), {threshold: .12});
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+</script>
+</body>
+</html>

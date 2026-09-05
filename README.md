@@ -1,0 +1,89 @@
+# GeoAgent —— 你的地球物理 × 机器学习个人 Agent
+
+一个从零开始、可自己持续扩展的研究 agent 框架（当前版本 **v0.2.0**，内置 20 个领域工具）。核心理念：**模型可以换，工具是你的资产**。
+agent 的智力来自 LLM，价值来自你亲手写的领域工具（读 SEG-Y、看测井曲线、快速建模……）。
+
+官网：<https://wangricardo.github.io/geoagent/>
+
+## 安装
+
+```bash
+pip install geoagent-ml          # 核心（numpy）
+pip install "geoagent-ml[all]"   # 含 scikit-learn / scipy / segyio / lasio / openai
+```
+
+## 快速开始
+
+```bash
+# 离线使用（无需 API key）
+python cli.py tools                 # 列出所有工具
+python cli.py run signal_spectrum "data=[1,2,3,2,1]; dt_ms=1.0"
+python examples/demo.py             # 迷你研究流程演示
+
+# 在线对话（任意 OpenAI 兼容接口）
+pip install openai
+set GEOAGENT_API_KEY=sk-...          # Windows: set / $env: in PowerShell
+set GEOAGENT_BASE_URL=https://api.openai.com/v1   # 可换成任何兼容端点
+set GEOAGENT_MODEL=gpt-4o-mini
+python cli.py chat
+```
+
+## 项目结构
+
+```
+geoagent/
+  core.py            # agent 循环：system prompt + function calling 工具循环
+  tools/
+    base.py          # 工具注册表：函数 + docstring 自动变成 function-calling schema
+    geophysics.py    # 地球物理工具
+    ml_tools.py      # 机器学习工具
+tests/test_tools.py  # 工具层测试（python -m pytest tests/）
+examples/demo.py     # 合成数据端到端演示
+cli.py               # 命令行入口
+```
+
+## 内置工具
+
+| 类别 | 工具 | 说明 |
+|---|---|---|
+| 地球物理 | `segy_info` / `segy_trace_amplitude` | SEG-Y 文件信息与道数据（需 `segyio`） |
+| 地球物理 | `las_curves` / `las_read_curve` | LAS 测井曲线浏览（需 `lasio`） |
+| 地球物理 | `signal_spectrum` / `signal_filter` | FFT 频谱、Butterworth 滤波（numpy/scipy） |
+| 地球物理 | `velocity_to_depth` | TWT→深度转换 |
+| 机器学习 | `dataset_profile` | 数据画像：形状/统计/缺失/类别分布 |
+| 机器学习 | `quick_train` | 自动分类/回归基线（随机森林）+ 指标 + 特征重要性 |
+| 机器学习 | `cross_validate` | k 折交叉验证 |
+| 机器学习 | `pca_reduce` | PCA 降维 |
+
+重型依赖（segyio/lasio/scikit-learn）都是可选的：没装时工具返回安装提示，agent 本身不崩。
+
+## 如何加自己的工具（这是本项目的主要玩法）
+
+在 `geoagent/tools/` 任意文件里写一个带类型注解和 docstring 的函数，然后注册：
+
+```python
+from .base import registry
+
+@registry.register(category="geophysics")
+def wavelet_ricker(freq_hz: float, dt_ms: float = 1.0, length_ms: float = 100.0) -> str:
+    """生成 Ricker 子波并返回采样值，可叠加到合成地震记录实验中。"""
+    ...
+```
+
+函数名、docstring 第一段、类型注解会自动进入 function-calling schema，
+在线模式下 LLM 立刻就能调用它 —— 不需要写任何额外胶水代码。
+
+## 建议的扩展路线图
+
+1. **数据接入**：`pick` 工具（读取拾取文件）、HDF5/NetCDF 地震体切片、VSP/FKO 数据。
+2. **正演与反演**：Ricker 子波 + 一维褶积模型制作合成记录；速度分析工具。
+3. **ML 深化**：XGBoost/LightGBM、PyTorch 训练封装（断点、早停）、地震相分类流水线。
+4. **可视化**：matplotlib 保存工区剖面/交会图 PNG，让 agent 能"看图说话"（配合多模态模型）。
+5. **Agent 能力**：多步规划（把"解释这口井"拆成工具序列）、检索文献（RAG）、长期记忆（研究笔记 JSON）。
+6. **评测**：为 agent 建 benchmark —— 一组标准研究问题 + 期望工具调用序列，防止改坏。
+
+## 设计说明
+
+- 工具结果一律转成文本回传 LLM（`ToolRegistry.execute`），方便任何模型接入与调试。
+- 工具内部异常被捕获为 `ERROR: ...` 文本返回，让模型自行纠正参数而不是崩溃。
+- `max_tool_rounds` 限制单轮对话的工具调用次数，防止失控循环。
