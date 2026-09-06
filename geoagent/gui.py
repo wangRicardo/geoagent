@@ -1,25 +1,58 @@
-"""Ricardo Agent 桌面版（Tkinter，零额外依赖）。
+"""Ricardo Agent 桌面版（Tkinter，零额外依赖）——现代聊天界面。
 
-与 CLI 共用同一套核心（GeoAgent + AgentConfig）：
-- 工作区：启动时选择任意文件夹，运行中可随时更换（类似 codex 选工作区）
-- 提供商/模型/思考强度：下拉框热切换，配置持久化到 ~/.geoagent/config.json
-- LLM 调用在后台线程执行，界面不卡顿；工具调用过程实时显示
-- 未配置密钥时进入 offline 模式，仍可离线使用全部工具
-
-入口：ricardo gui  /  python -m geoagent gui
+布局对齐主流 AI 客户端（ZCode / ChatGPT 风格）：
+┌─────────┬──────────────────────────────┐
+│ 侧边栏   │  顶栏（工作区/提供商/模型/思考）  │
+│ logo     ├──────────────────────────────┤
+│ 新对话   │  聊天区（用户右/助手左 气泡）     │
+│ 会话列表 │                              │
+│ 状态     │  输入区（多行输入 + 发送按钮）    │
+└─────────┴──────────────────────────────┘
+与 CLI 共用同一套核心（GeoAgent + AgentConfig）。
 """
 
 from __future__ import annotations
 
+import os
 import queue
+import sys
 import threading
 import tkinter as tk
-from tkinter import filedialog, font as tkfont, messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from . import GeoAgent, registry
 from .config import PROVIDERS, THINKING_LEVELS
 
-BANNER_LINE = "◈ Ricardo Agent — 地球物理 × 机器学习个人研究助手"
+# -- 配色（与官网一致的深色科技风） -------------------------------------------
+BG = "#0a0e1a"          # 主背景
+SIDEBAR = "#0d1424"     # 侧边栏
+CARD = "#141c2e"        # 卡片/输入框
+CARD_HI = "#1a2540"     # 卡片悬停
+BUBBLE_USER = "#155e75"  # 用户气泡（青色暗调）
+BUBBLE_AI = "#161f33"   # 助手气泡
+BORDER = "#232f4b"
+TEXT = "#e8ecf4"
+MUTED = "#8b99af"
+ACCENT = "#22d3ee"
+GREEN = "#34d399"
+RED = "#f87171"
+YELLOW = "#facc15"
+FONT = ("Microsoft YaHei UI", 10)
+FONT_S = ("Microsoft YaHei UI", 9)
+FONT_XS = ("Microsoft YaHei UI", 8)
+FONT_MONO = ("Consolas", 9)
+FONT_LOGO = ("Segoe UI", 15, "bold")
+
+
+def _asset(name: str) -> str | None:
+    """兼容源码运行与 PyInstaller 打包的资源定位。"""
+    base = getattr(sys, "_MEIPASS", None)
+    for root in (base, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))):
+        if root:
+            p = os.path.join(root, "assets", name)
+            if os.path.exists(p):
+                return p
+    return None
 
 
 class ChatWindow:
@@ -27,136 +60,219 @@ class ChatWindow:
         self.agent = GeoAgent(workdir=workdir)
         self.root = tk.Tk()
         self.root.title("Ricardo Agent")
-        self.root.geometry("980x680")
-        self.root.minsize(720, 520)
-        self._build_style()
-        self._build_ui()
+        self.root.geometry("1180x760")
+        self.root.minsize(900, 600)
+        self.root.configure(bg=BG)
+        icon = _asset("ricardo.ico")
+        if icon:
+            try:
+                self.root.iconbitmap(icon)
+            except tk.TclError:
+                pass
         self._queue: queue.Queue = queue.Queue()
         self._live_open = False
         self._reply_started = False
+        self._build_ui()
         self.root.after(120, self._poll_queue)
-        self._log_system(BANNER_LINE)
-        self._log_system(f"工作区: {self.agent.workdir}")
-        self._refresh_status()
+        self._sys("◈ Ricardo Agent — 地球物理 × 机器学习个人研究助手")
+        self._sys(f"工作区: {self.agent.workdir} ｜ 输入 /help 查看命令")
+        if not self.agent.online:
+            self._sys("未检测到 API 密钥（离线简单模式）：设置 DEEPSEEK_API_KEY 等环境变量后重启即可完整对话。")
+        self._refresh_sessions()
 
-    # -- 样式 ----------------------------------------------------------------
-
-    def _build_style(self) -> None:
-        style = ttk.Style(self.root)
-        try:
-            style.theme_use("clam")
-        except tk.TclError:
-            pass
-        bg, card = "#0a0e1a", "#141c2e"
-        fg, muted, accent = "#e8ecf4", "#9aa7ba", "#22d3ee"
-        self.root.configure(bg=bg)
-        style.configure(".", background=bg, foreground=fg, fieldbackground=card)
-        style.configure("TFrame", background=bg)
-        style.configure("Card.TFrame", background=card)
-        style.configure("TLabel", background=bg, foreground=fg)
-        style.configure("Muted.TLabel", background=bg, foreground=muted, font=("Microsoft YaHei UI", 9))
-        style.configure("TButton", background=card, foreground=fg, padding=6)
-        style.map("TButton", background=[("active", "#1d2942")])
-        style.configure("Accent.TButton", background=accent, foreground="#0a0e1a")
-        style.map("Accent.TButton", background=[("active", "#67e8f9")])
-        style.configure("TCombobox", fieldbackground=card, background=card, foreground=fg)
-        self.root.option_add("*TCombobox*Listbox.background", card)
-        self.root.option_add("*TCombobox*Listbox.foreground", fg)
-
-    # -- 界面 ------------------------------------------------------------------
+    # ------------------------------------------------------------------ UI
 
     def _build_ui(self) -> None:
-        top = ttk.Frame(self.root, padding=(10, 8))
-        top.pack(fill="x")
+        self.root.columnconfigure(1, weight=1)
+        self.root.rowconfigure(0, weight=1)
 
-        ttk.Button(top, text="📂 工作区", command=self._pick_workdir).pack(side="left")
-        self.lbl_dir = ttk.Label(top, text=self.agent.workdir, style="Muted.TLabel")
-        self.lbl_dir.pack(side="left", padx=(6, 14))
+        # ---------- 侧边栏 ----------
+        side = tk.Frame(self.root, width=224, bg=SIDEBAR)
+        side.grid(row=0, column=0, sticky="nsw")
+        side.grid_propagate(False)
+        side.columnconfigure(0, weight=1)
+
+        tk.Label(side, text="◈ Ricardo", font=FONT_LOGO, bg=SIDEBAR,
+                 fg=ACCENT).pack(anchor="w", padx=18, pady=(18, 0))
+        tk.Label(side, text="Agent", font=FONT_LOGO, bg=SIDEBAR,
+                 fg=TEXT).pack(anchor="w", padx=18)
+
+        def side_btn(text, cmd):
+            b = tk.Label(side, text=text, font=FONT, bg=SIDEBAR, fg=TEXT,
+                         cursor="hand2", padx=18, pady=8, anchor="w")
+            b.bind("<Button-1>", lambda e: cmd())
+            b.bind("<Enter>", lambda e: b.configure(bg=CARD))
+            b.bind("<Leave>", lambda e: b.configure(bg=SIDEBAR))
+            b.pack(fill="x", pady=2)
+            return b
+
+        tk.Frame(side, bg=BORDER, height=1).pack(fill="x", pady=10)
+        side_btn("＋ 新对话", self._new_chat)
+        side_btn("📂 选择工作区", self._pick_workdir)
+        side_btn("💾 保存会话", lambda: self._slash(f"/save {self._session_name()}"))
+        side_btn("🚀 运行评测 bench", self._run_bench)
+
+        tk.Label(side, text="会话", font=FONT_S, bg=SIDEBAR, fg=MUTED,
+                 anchor="w").pack(fill="x", padx=18, pady=(14, 2))
+        self.sess_box = tk.Frame(side, bg=SIDEBAR)
+        self.sess_box.pack(fill="x")
+
+        # 侧边栏底部状态
+        foot = tk.Frame(side, bg=SIDEBAR)
+        foot.pack(side="bottom", fill="x", padx=14, pady=12)
+        self.lbl_dot = tk.Label(foot, text="", font=FONT_S, bg=SIDEBAR, fg=GREEN, anchor="w")
+        self.lbl_dot.pack(fill="x")
+        self.lbl_prov = tk.Label(foot, text="", font=FONT_XS, bg=SIDEBAR, fg=MUTED,
+                                 anchor="w", justify="left", wraplength=190)
+        self.lbl_prov.pack(fill="x")
+
+        # ---------- 右侧主区 ----------
+        main = tk.Frame(self.root, bg=BG)
+        main.grid(row=0, column=1, sticky="nsew")
+        main.columnconfigure(0, weight=1)
+        main.rowconfigure(1, weight=1)
+
+        # 顶栏
+        top = tk.Frame(main, bg=BG)
+        top.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 4))
+        self.lbl_dir = tk.Label(top, text="📂 " + self.agent.workdir, font=FONT_S,
+                                bg=CARD, fg=MUTED, padx=10, pady=6, cursor="hand2")
+        self.lbl_dir.pack(side="left")
         self.lbl_dir.bind("<Button-1>", lambda e: self._pick_workdir())
 
-        ttk.Label(top, text="提供商").pack(side="left", padx=(0, 4))
-        self.cmb_provider = ttk.Combobox(top, width=10, state="readonly",
-                                         values=list(PROVIDERS))
-        self.cmb_provider.set(self.agent.config.provider)
-        self.cmb_provider.pack(side="left", padx=(0, 10))
-        self.cmb_provider.bind("<<ComboboxSelected>>", lambda e: self._on_provider_change())
+        def combo(label, width, values, get, set_cmd):
+            tk.Label(top, text=label, font=FONT_XS, bg=BG, fg=MUTED).pack(side="left", padx=(14, 2))
+            c = ttk.Combobox(top, width=width, state="readonly", values=values,
+                             font=FONT_XS)
+            c.set(get())
+            c.pack(side="left")
+            return c
 
-        ttk.Label(top, text="模型").pack(side="left", padx=(0, 4))
-        self.cmb_model = ttk.Combobox(top, width=22)
-        self._sync_model_list()
-        self.cmb_model.pack(side="left", padx=(0, 10))
+        self.cmb_provider = combo("提供商", 9, list(PROVIDERS),
+                                  lambda: self.agent.config.provider, None)
+        self.cmb_provider.bind("<<ComboboxSelected>>", lambda e: self._on_provider_change())
+        self.cmb_model = combo("模型", 20, self.agent.config.models(),
+                               lambda: self.agent.config.model, None)
         self.cmb_model.bind("<<ComboboxSelected>>", lambda e: self._on_model_change())
         self.cmb_model.bind("<Return>", lambda e: self._on_model_change())
-
-        ttk.Label(top, text="思考").pack(side="left", padx=(0, 4))
-        self.cmb_think = ttk.Combobox(top, width=8, state="readonly",
-                                      values=THINKING_LEVELS)
-        self.cmb_think.set(self.agent.config.thinking)
-        self.cmb_think.pack(side="left", padx=(0, 12))
+        self.cmb_think = combo("思考", 7, THINKING_LEVELS,
+                               lambda: self.agent.config.thinking, None)
         self.cmb_think.bind("<<ComboboxSelected>>", lambda e: self._on_thinking_change())
 
-        self.lbl_status = ttk.Label(top, text="", style="Muted.TLabel")
-        self.lbl_status.pack(side="right")
+        # 聊天区（可滚动画布 + 消息气泡容器）
+        wrap = tk.Frame(main, bg=BG)
+        wrap.grid(row=1, column=0, sticky="nsew", padx=16)
+        wrap.rowconfigure(0, weight=1)
+        wrap.columnconfigure(0, weight=1)
+        self.canvas = tk.Canvas(wrap, bg=BG, bd=0, highlightthickness=0)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        sb = tk.Scrollbar(wrap, command=self.canvas.yview, width=12)
+        sb.grid(row=0, column=1, sticky="ns")
+        self.canvas.configure(yscrollcommand=sb.set)
+        self.msgs = tk.Frame(self.canvas, bg=BG)
+        self._win = self.canvas.create_window((0, 0), window=self.msgs, anchor="nw")
+        self.msgs.columnconfigure(0, weight=1)
+        self._tail = tk.Frame(self.msgs, bg=BG)
+        self._tail.pack(side="bottom", fill="x")
+        self.msgs.bind("<Configure>", self._on_msgs_configure)
+        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self._win, width=e.width))
+        for seq in ("<MouseWheel>",):
+            self.canvas.bind_all(seq, self._on_wheel)
 
-        self.txt = tk.Text(self.root, wrap="word", bd=0, padx=14, pady=12,
-                           bg="#0a0e1a", fg="#e8ecf4", insertbackground="#e8ecf4",
-                           font=("Microsoft YaHei UI", 10), state="disabled", cursor="arrow")
-        self.txt.pack(fill="both", expand=True, padx=10, pady=(4, 0))
-        for tag, conf in [
-            ("system", {"foreground": "#64748b", "font": ("Microsoft YaHei UI", 9)}),
-            ("user", {"foreground": "#22d3ee", "font": ("Microsoft YaHei UI", 10, "bold")}),
-            ("assistant", {"foreground": "#e8ecf4", "font": ("Microsoft YaHei UI", 10)}),
-            ("tool", {"foreground": "#facc15", "font": ("Consolas", 9)}),
-            ("error", {"foreground": "#f87171"}),
-        ]:
-            self.txt.tag_configure(tag, **conf)
-
-        bottom = ttk.Frame(self.root, padding=(10, 8))
-        bottom.pack(fill="x")
-        self.input = tk.Text(bottom, height=3, wrap="word", bd=0,
-                             bg="#141c2e", fg="#e8ecf4", insertbackground="#e8ecf4",
-                             font=("Microsoft YaHei UI", 10))
-        self.input.pack(side="left", fill="both", expand=True)
+        # 输入区
+        comp = tk.Frame(main, bg=CARD, highlightbackground=BORDER,
+                        highlightthickness=1)
+        comp.grid(row=2, column=0, sticky="ew", padx=16, pady=(6, 14))
+        self.input = tk.Text(comp, height=3, wrap="word", bd=0, bg=CARD, fg=TEXT,
+                             insertbackground=ACCENT, font=FONT, padx=14, pady=10)
+        self.input.pack(fill="both", expand=True, padx=(4, 0), pady=(4, 0))
         self.input.bind("<Return>", self._on_enter)
-        self.input.bind("<Shift-Return>", lambda e: None)  # 换行
-        self.btn_send = ttk.Button(bottom, text="发送 ⏎", style="Accent.TButton",
-                                   command=self._send, state="disabled")
-        self.btn_send.pack(side="left", fill="y", padx=(8, 0))
-        if not self.agent.online:
-            self._log_system(
-                "未检测到 API 密钥（offline 模式）：界面与工具可用，但无法对话。\n"
-                "设置提供商对应的环境变量（如 DEEPSEEK_API_KEY）或通用的 RICARDO_API_KEY 后重启。"
-            )
+        self.input.bind("<Shift-Return>", lambda e: None)
+        bar = tk.Frame(comp, bg=CARD)
+        bar.pack(fill="x", padx=10, pady=(0, 6))
+        tk.Label(bar, text="Enter 发送 · Shift+Enter 换行 · /help 查看命令",
+                 font=FONT_XS, bg=CARD, fg=MUTED).pack(side="left")
+        self.btn_send = tk.Label(bar, text="发送 ⏎", font=("Microsoft YaHei UI", 10, "bold"),
+                                 bg=ACCENT, fg="#0a0e1a", padx=18, pady=6, cursor="hand2")
+        self.btn_send.pack(side="right")
+        self.btn_send.bind("<Button-1>", lambda e: self._send())
         self.input.focus_set()
+        self._refresh_status()
 
-    # -- 日志 ------------------------------------------------------------------
+    # ------------------------------------------------------------ 气泡渲染
 
-    def _append(self, text: str, tag: str) -> None:
-        self.txt.configure(state="normal")
-        self.txt.insert("end", text + "\n\n", tag)
-        self.txt.see("end")
-        self.txt.configure(state="disabled")
+    def _on_msgs_configure(self, _e=None) -> None:
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
-    def _log_system(self, msg: str) -> None:
-        self._append(msg, "system")
+    def _on_wheel(self, e) -> None:
+        self.canvas.yview_scroll(int(-e.delta / 120), "units")
+
+    def _bubble(self, text: str, side: str, tag_bg: str, tag_fg: str,
+                font=FONT, max_ratio: float = 0.78) -> None:
+        """在聊天区末尾追加一条消息气泡。"""
+        row = tk.Frame(self.msgs, bg=BG)
+        row.pack(fill="x", pady=4, before=self._tail)
+        anchor = "e" if side == "user" else "w"
+        inner = tk.Frame(row, bg=tag_bg, highlightbackground=BORDER, highlightthickness=1)
+        inner.pack(anchor=anchor, padx=(80 if anchor == "e" else 8, 8 if anchor == "e" else 80))
+        maxw = max(360, int(self.root.winfo_width() * max_ratio) - 60)
+        lbl = tk.Label(inner, text=text, font=font, bg=tag_bg, fg=tag_fg,
+                       wraplength=maxw, justify="left", anchor="w")
+        lbl.pack(padx=14, pady=10)
+        self.canvas.update_idletasks()
+        self.canvas.yview_moveto(1.0)
+
+    def _user(self, text: str) -> None:
+        self._bubble(text, "user", BUBBLE_USER, "#e0faff")
+
+    def _ai(self, text: str) -> None:
+        self._bubble(text, "ai", BUBBLE_AI, TEXT)
+
+    def _tool(self, text: str) -> None:
+        self._bubble("🔧 " + text, "ai", "#101826", YELLOW, font=FONT_MONO, max_ratio=0.9)
+
+    def _sys(self, text: str) -> None:
+        row = tk.Frame(self.msgs, bg=BG)
+        row.pack(fill="x", pady=2, before=self._tail)
+        tk.Label(row, text="— " + text + " —", font=FONT_XS, bg=BG,
+                 fg=MUTED).pack()
+        self.canvas.yview_moveto(1.0)
+
+    def _err(self, text: str) -> None:
+        self._bubble(text, "ai", "#2a1215", RED)
+
+    # ------------------------------------------------------------ 状态/配置
 
     def _refresh_status(self) -> None:
         c = self.agent.config
-        key = "✓ 密钥" if c.api_key else "✗ 无密钥"
-        self.lbl_status.configure(text=f"{c.provider} · {c.model} · 思考:{c.thinking} · {key}")
-        self.lbl_dir.configure(text=self.agent.workdir)
+        ok = bool(c.api_key)
+        self.lbl_dot.configure(text="● 在线" if ok else "○ 离线（简单模式）",
+                               fg=GREEN if ok else MUTED)
+        self.lbl_prov.configure(text=f"{c.provider} · {c.model}\n思考: {c.thinking}")
+        self.lbl_dir.configure(text="📂 " + self.agent.workdir)
 
-    # -- 配置热切换 ---------------------------------------------------------------
+    def _refresh_sessions(self) -> None:
+        for w in self.sess_box.winfo_children():
+            w.destroy()
+        names = [s for s in self.agent.list_sessions().split(", ") if s and "没有" not in s]
+        for n in names[:8]:
+            lbl = tk.Label(self.sess_box, text="· " + n, font=FONT_S, bg=SIDEBAR,
+                           fg=MUTED, anchor="w", padx=18, cursor="hand2")
+            lbl.pack(fill="x")
+            lbl.bind("<Button-1>", lambda e, n=n: self._slash(f"/load {n}"))
+            lbl.bind("<Enter>", lambda e, l=lbl: l.configure(fg=ACCENT))
+            lbl.bind("<Leave>", lambda e, l=lbl: l.configure(fg=MUTED))
 
-    def _sync_model_list(self) -> None:
-        self.cmb_model["values"] = self.agent.config.models()
-        self.cmb_model.set(self.agent.config.model)
+    def _session_name(self) -> str:
+        from datetime import datetime
+        return "chat_" + datetime.now().strftime("%m%d_%H%M")
 
     def _on_provider_change(self) -> None:
         msg = self.agent.config.set_provider(self.cmb_provider.get())
-        self._log_system(msg)
+        self.cmb_model["values"] = self.agent.config.models()
+        self.cmb_model.set(self.agent.config.model)
+        self._sys(msg)
         self._refresh_status()
-        # 后台拉取该提供商的真实模型列表（失败回退内置预设）
         def _fetch():
             remote = self.agent.config.fetch_models()
             if remote:
@@ -164,53 +280,80 @@ class ChatWindow:
         threading.Thread(target=_fetch, daemon=True).start()
 
     def _on_model_change(self) -> None:
-        msg = self.agent.config.set_model(self.cmb_model.get().strip())
-        self._log_system(msg)
+        self._sys(self.agent.config.set_model(self.cmb_model.get().strip()))
         self._refresh_status()
 
     def _on_thinking_change(self) -> None:
-        msg = self.agent.config.set_thinking(self.cmb_think.get())
-        self._log_system(msg)
+        self._sys(self.agent.config.set_thinking(self.cmb_think.get()))
         self._refresh_status()
 
     def _pick_workdir(self) -> None:
         d = filedialog.askdirectory(title="选择工作文件夹", initialdir=self.agent.workdir)
         if d:
-            self._log_system(self.agent.set_workdir(d))
+            self._sys(self.agent.set_workdir(d))
             self._refresh_status()
 
-    # -- 发送与后台线程 -------------------------------------------------------------
+    def _new_chat(self) -> None:
+        for w in self.msgs.winfo_children():
+            w.destroy()
+        self.agent.history = []
+        self._sys("新对话已开始（历史已清空）")
+
+    def _run_bench(self) -> None:
+        if not messagebox.askyesno("评测", "运行 7 个场景的行为评测？\n会真实调用 LLM，耗时约 1-2 分钟。"):
+            return
+        self._user("🚀 /bench")
+        self.btn_send.configure(state="disabled")
+        threading.Thread(target=self._bench_worker, daemon=True).start()
+
+    def _bench_worker(self) -> None:
+        from .bench import load_scenarios, run_benchmark
+        try:
+            report = run_benchmark(self.agent, load_scenarios(),
+                                   on_progress=lambda m: self._queue.put(("ev", {"type": "tool_end", "result": m})))
+            self._queue.put(("raw", report))
+        except Exception as exc:  # noqa: BLE001
+            self._queue.put(("error", f"ERROR: {exc}"))
+
+    # ------------------------------------------------------------ 发送
+
+    def _slash(self, text: str) -> None:
+        self._user(text)
+        from .cli import _handle_slash
+        out = _handle_slash(text, self.agent)
+        if out:
+            self._bubble(out, "ai", BUBBLE_AI, MUTED, font=FONT_S)
+        self._refresh_sessions()
+        self._refresh_status()
 
     def _on_enter(self, event) -> str:
-        if not (event.state & 0x0001):  # 无 Shift 时回车发送
+        if not (event.state & 0x0001):
             self._send()
             return "break"
         return None
 
     def _send(self) -> None:
         text = self.input.get("1.0", "end").strip()
-        if not text or self.btn_send["state"] == "disabled":
+        if not text or str(self.btn_send["state"]) == "disabled":
             return
         self.input.delete("1.0", "end")
-        self._append("你: " + text, "user")
+        self._user(text)
         if text.startswith("/"):
-            from .cli import _handle_slash
-            self._append(_handle_slash(text, self.agent) or "", "system")
+            self._slash(text)
             return
         if not self.agent.online:
             from .cli import _demo_reply
-            self._append("（离线简单模式）", "system")
-            self._append(_demo_reply(text, self.agent), "assistant")
+            self._ai("（离线简单模式）\n" + _demo_reply(text, self.agent))
             return
-        self.btn_send.configure(state="disabled")
+        self.btn_send.configure(state="disabled", bg="#0e7490")
         self._live_open = False
         self._reply_started = False
+        self._live_widgets: list[tk.Widget] = []
         threading.Thread(target=self._worker, args=(text,), daemon=True).start()
 
     def _worker(self, text: str) -> None:
         def on_event(ev: dict) -> None:
             self._queue.put(("ev", ev))
-
         try:
             self.agent.chat(text, on_event=on_event)
             self._queue.put(("done", self.agent.usage_report()))
@@ -218,28 +361,48 @@ class ChatWindow:
             self._queue.put(("error", f"ERROR: {exc}"))
 
     def _handle_event(self, ev: dict) -> None:
-        """流式事件：delta 打字机效果，工具调用实时可见。"""
-        self.txt.configure(state="normal")
         if ev["type"] == "delta":
             if not self._live_open:
-                if self._reply_started:
-                    self.txt.insert("end", "\n\n", "assistant")
-                self.txt.insert("end", "🤖 ", "assistant")
+                self._live_text = tk.Text(self._tail, wrap="word", bd=0,
+                                          bg=BUBBLE_AI, fg=TEXT, font=FONT,
+                                          padx=14, pady=10, height=1)
+                inner = tk.Frame(self._tail, bg=BUBBLE_AI,
+                                 highlightbackground=BORDER, highlightthickness=1)
+                inner.pack(anchor="w", padx=(8, 80), pady=4)
+                self._live_text.pack(in_=inner, padx=1, pady=1)
+                self._live_text.bind("<Key>", lambda e: "break")
                 self._live_open = True
                 self._reply_started = True
-            self.txt.insert("end", ev["text"], "assistant")
-            self.txt.see("end")
+            self._live_text.insert("end", ev["text"])
+            self._live_text.configure(height=max(1, int(self._live_text.index("end-1c").split(".")[0])))
+            self.canvas.yview_moveto(1.0)
         elif ev["type"] == "tool_start":
             import json as _json
-            args_s = _json.dumps(ev["args"], ensure_ascii=False)[:110]
             self._live_open = False
-            self._reply_started = False
-            self.txt.insert("end", f"\n🔧 {ev['name']}({args_s})\n", "tool")
+            args_s = _json.dumps(ev["args"], ensure_ascii=False)[:110]
+            self._tool(f"{ev['name']}({args_s})")
         elif ev["type"] == "tool_end":
             r = ev["result"].replace("\n", " ")
-            self.txt.insert("end", f"   ↳ {r[:150]}{'…' if len(r) > 150 else ''}\n", "tool")
-        self.txt.see("end")
-        self.txt.configure(state="disabled")
+            self._tool("↳ " + (r[:150] + ("…" if len(r) > 150 else "")))
+
+    def _tool(self, text: str) -> None:
+        inner = tk.Frame(self._tail, bg="#101826",
+                         highlightbackground=BORDER, highlightthickness=1)
+        inner.pack(anchor="w", padx=(8, 80), pady=1)
+        tk.Label(inner, text="🔧 " + text, font=FONT_MONO, bg="#101826",
+                 fg=YELLOW, wraplength=760, justify="left").pack(padx=12, pady=6)
+        self.canvas.yview_moveto(1.0)
+
+    def _flush_tail(self) -> None:
+        """把流式区内容定格为正式气泡。"""
+        text = ""
+        if self._live_open:
+            text = self._live_text.get("1.0", "end").strip()
+        for w in self._tail.winfo_children():
+            w.destroy()
+        self._live_open = False
+        if text:
+            self._ai(text)
 
     def _poll_queue(self) -> None:
         try:
@@ -248,21 +411,21 @@ class ChatWindow:
                 if tag == "ev":
                     self._handle_event(msg)
                     continue
-                if tag == "done":
-                    if not self._reply_started:
-                        self._append("🤖 " + msg, "assistant")
-                    else:
-                        self._append("", "assistant")
-                        self._log_system(msg)  # 用量统计
+                if tag in ("done", "raw"):
+                    if tag == "raw":
+                        self._ai(msg)
+                    elif not self._reply_started:
+                        self._ai("（模型未返回文本）")
+                    self._sys(msg if tag == "done" else "")
                     self._live_open = False
                     self._reply_started = False
                 else:
                     self._live_open = False
                     self._reply_started = False
-                    self._append(msg, "error")
+                    self._err(msg)
         except queue.Empty:
             pass
-        self.btn_send.configure(state="normal")
+        self.btn_send.configure(state="normal", bg=ACCENT)
         self._refresh_status()
         self.root.after(120, self._poll_queue)
 
