@@ -21,7 +21,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from . import GeoAgent
-from .config import PERMISSION_LABELS, PERMISSION_MODES, PROVIDERS, THINKING_LEVELS
+from .config import PERMISSION_LABELS, PROVIDERS, THINKING_LEVELS
 from .observability import gui_crash_hook, setup_logging
 
 # -- 配色（与官网一致的深色科技风） -------------------------------------------
@@ -192,70 +192,86 @@ class ChatWindow:
         self.btn_send.place(relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
         self.input.focus_set()
 
-        # 底部状态栏：工作区 / 设置 / 模型 / 思考 / 权限 / 密钥 / 用量 全部集中于此
+        # 底部状态栏：左侧上下文，右侧选择器，分组留白
         status = tk.Frame(main, bg=SIDEBAR, highlightbackground=BORDER, highlightthickness=1)
         status.grid(row=2, column=0, sticky="ew")
+        status.columnconfigure(1, weight=1)
 
-        def sep():
-            tk.Label(status, text="│", font=FONT_XS, bg=SIDEBAR, fg=BORDER).pack(side="left")
+        PAD = 9  # 统一内边距
 
-        def chip(text, fg=MUTED, cmd=None):
+        def chip(text, fg=MUTED, cmd=None, hover=TEXT):
             c = tk.Label(
                 status,
                 text=text,
                 font=FONT_XS,
                 bg=SIDEBAR,
                 fg=fg,
-                padx=10,
-                pady=7,
+                padx=PAD,
+                pady=9,
                 cursor="hand2" if cmd else "arrow",
             )
             c.pack(side="left")
             if cmd:
                 c.bind("<Button-1>", lambda e: cmd())
-                c.bind("<Enter>", lambda e: c.configure(fg=TEXT))
+                c.bind("<Enter>", lambda e: c.configure(fg=hover))
                 c.bind("<Leave>", lambda e: c.configure(fg=fg))
             return c
 
+        def gap(px=14):
+            tk.Label(status, text="", font=FONT_XS, bg=SIDEBAR, width=0).pack(side="left", padx=px)
+
+        # 左组：上下文
         wd = self.agent.workdir
-        self.lbl_dir = chip("📂 " + (wd[:30] + "…" if len(wd) > 30 else wd), cmd=self._pick_workdir)
+        self.lbl_dir = chip("📂 " + (wd[:26] + "…" if len(wd) > 26 else wd), cmd=self._pick_workdir)
+        gap(4)
         chip("⚙ 设置", fg=ACCENT, cmd=self._open_settings)
-        sep()
-        tk.Label(status, text="模型", font=FONT_XS, bg=SIDEBAR, fg=MUTED).pack(side="left", padx=(8, 2))
+
+        status.columnconfigure(0, weight=1)
+        spacer = tk.Frame(status, bg=SIDEBAR)
+        spacer.pack(side="left", fill="x", expand=True)
+
+        # 右组：选择器（从右往左 pack）
+        self.lbl_usage = tk.Label(status, text="", font=FONT_XS, bg=SIDEBAR, fg=MUTED, padx=PAD)
+        self.lbl_usage.pack(side="right")
+        self.lbl_key = tk.Label(
+            status, text="🔑 未配置", font=FONT_XS, bg=SIDEBAR, fg=MUTED, padx=PAD, cursor="hand2"
+        )
+        self.lbl_key.pack(side="right")
+        self.lbl_key.bind("<Button-1>", lambda e: self._open_settings())
+
+        perm_map = dict(
+            zip(["readonly", "standard", "ask", "full"], ["只读", "标准", "谨慎", "自主"], strict=False)
+        )
+        self._perm_map = perm_map
+        tk.Label(status, text="权限", font=FONT_XS, bg=SIDEBAR, fg=MUTED).pack(side="right", padx=(0, 2))
+        self.cmb_perm = ttk.Combobox(
+            status, width=6, state="readonly", font=FONT_XS, values=list(perm_map.values())
+        )
+        self.cmb_perm.set(perm_map.get(self.agent.config.permission_mode, "标准"))
+        self.cmb_perm.pack(side="right")
+        self.cmb_perm.bind("<<ComboboxSelected>>", lambda e: self._on_perm_change())
+        gap(10)
+        tk.Label(status, text="思考", font=FONT_XS, bg=SIDEBAR, fg=MUTED).pack(side="right", padx=(0, 2))
+        self.cmb_think = ttk.Combobox(status, width=5, state="readonly", font=FONT_XS, values=THINKING_LEVELS)
+        self.cmb_think.set(self.agent.config.thinking)
+        self.cmb_think.pack(side="right")
+        self.cmb_think.bind("<<ComboboxSelected>>", lambda e: self._on_thinking_change())
+        gap(10)
+        tk.Label(status, text="模型", font=FONT_XS, bg=SIDEBAR, fg=MUTED).pack(side="right", padx=(0, 2))
         self.cmb_model = ttk.Combobox(
             status,
-            width=20,
+            width=22,
             state="readonly",
             font=FONT_XS,
             values=self.agent.config.models(),
         )
         self.cmb_model.set(self.agent.config.model)
-        self.cmb_model.pack(side="left")
+        self.cmb_model.pack(side="right")
         self.cmb_model.bind("<<ComboboxSelected>>", lambda e: self._on_model_change())
         self.cmb_model.bind("<Return>", lambda e: self._on_model_change())
-        tk.Label(status, text="思考", font=FONT_XS, bg=SIDEBAR, fg=MUTED).pack(side="left", padx=(10, 2))
-        self.cmb_think = ttk.Combobox(status, width=6, state="readonly", font=FONT_XS, values=THINKING_LEVELS)
-        self.cmb_think.set(self.agent.config.thinking)
-        self.cmb_think.pack(side="left")
-        self.cmb_think.bind("<<ComboboxSelected>>", lambda e: self._on_thinking_change())
-        tk.Label(status, text="权限", font=FONT_XS, bg=SIDEBAR, fg=MUTED).pack(side="left", padx=(10, 2))
-        self.cmb_perm = ttk.Combobox(
-            status, width=9, state="readonly", font=FONT_XS, values=list(PERMISSION_MODES)
-        )
-        self.cmb_perm.set(self.agent.config.permission_mode)
-        self.cmb_perm.pack(side="left")
-        self.cmb_perm.bind("<<ComboboxSelected>>", lambda e: self._on_perm_change())
-        self.lbl_perm = tk.Label(status, text="", font=FONT_XS, bg=SIDEBAR, fg=MUTED)
-        self.lbl_perm.pack(side="left", padx=(4, 0))
-        self.lbl_key = tk.Label(
-            status, text="🔑", font=FONT_XS, bg=SIDEBAR, fg=MUTED, padx=10, cursor="hand2"
-        )
-        self.lbl_key.pack(side="right")
-        self.lbl_key.bind("<Button-1>", lambda e: self._open_settings())
-        self.lbl_usage = tk.Label(status, text="", font=FONT_XS, bg=SIDEBAR, fg=MUTED, padx=8)
-        self.lbl_usage.pack(side="right")
         self._refresh_status()
 
+    # ------------------------------------------------------------ 气泡渲染
     # ------------------------------------------------------------ 气泡渲染
 
     def _on_msgs_configure(self, _e=None) -> None:
@@ -308,8 +324,7 @@ class ChatWindow:
         self.lbl_prov.configure(text=f"{c.provider} · {c.model}")
         wd = self.agent.workdir
         self.lbl_dir.configure(text="📂 " + (wd[:30] + "…" if len(wd) > 30 else wd))
-        self.lbl_perm.configure(text=PERMISSION_LABELS.get(c.permission_mode, c.permission_mode))
-        self.cmb_perm.set(c.permission_mode)
+        self.cmb_perm.set(self._perm_map.get(c.permission_mode, "标准"))
         self.lbl_key.configure(text=f"🔑 {c.key_source()}", fg=GREEN if ok else MUTED)
         u = self.agent.usage
         if u["calls"]:
@@ -367,10 +382,11 @@ class ChatWindow:
         self.cmb_perm.set(f"{m} · {PERMISSION_LABELS[m]}")
 
     def _on_perm_change(self) -> None:
-        sel = self.cmb_perm.get().split(" · ")[0]
-        if sel == "ask":
+        zh = self.cmb_perm.get()
+        en = next(k for k, v in self._perm_map.items() if v == zh)
+        if en == "ask":
             self._sys("谨慎模式：写入/执行/联网将在弹窗中逐次确认。")
-        out = self.agent.set_permission_mode(sel, confirm=self._confirm_tool)
+        out = self.agent.set_permission_mode(en, confirm=self._confirm_tool)
         self._sys(out)
         self._refresh_status()
 
