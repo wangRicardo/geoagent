@@ -92,6 +92,7 @@ def test_latex_tools(tmp_path, monkeypatch):
 
 
 def test_plot_tools(tmp_path, monkeypatch):
+    pytest.importorskip("matplotlib")
     monkeypatch.chdir(tmp_path)
     rng = np.random.default_rng(1)
     t = np.arange(200) / 50.0
@@ -115,8 +116,7 @@ def test_citation_lookup_offline_error():
 
 
 def test_segy_write_read_roundtrip(tmp_path, monkeypatch):
-    import segyio  # noqa: F401
-
+    pytest.importorskip("segyio")
     monkeypatch.chdir(tmp_path)
     rng = np.random.default_rng(3)
     t = np.arange(200) * 0.002
