@@ -392,6 +392,7 @@ def test_permission_modes(tmp_path, monkeypatch):
     from geoagent import GeoAgent
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("geoagent.config.CONFIG_PATH", tmp_path / "config.json")
     a = GeoAgent()
     assert a.policy.mode == "standard"
     # 只读：写被拒、读允许

@@ -21,7 +21,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from . import GeoAgent
-from .config import PERMISSION_LABELS, PROVIDERS, THINKING_LEVELS
+from .config import PERMISSION_LABELS, PERMISSION_MODES, PROVIDERS, THINKING_LEVELS
 from .observability import gui_crash_hook, setup_logging
 
 # -- 配色（与官网一致的深色科技风） -------------------------------------------
@@ -135,46 +135,15 @@ class ChatWindow:
         )
         self.lbl_prov.pack(fill="x")
 
-        # ---------- 右侧主区 ----------
+        # ---------- 右侧主区（ZCode 风格：聊天区 / 输入框 / 底部状态栏） ----------
         main = tk.Frame(self.root, bg=BG)
         main.grid(row=0, column=1, sticky="nsew")
         main.columnconfigure(0, weight=1)
-        main.rowconfigure(1, weight=1)
-
-        # 顶栏
-        top = tk.Frame(main, bg=BG)
-        top.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 4))
-        self.lbl_dir = tk.Label(
-            top,
-            text="📂 " + self.agent.workdir,
-            font=FONT_S,
-            bg=CARD,
-            fg=MUTED,
-            padx=10,
-            pady=6,
-            cursor="hand2",
-        )
-        self.lbl_dir.pack(side="left")
-        self.lbl_dir.bind("<Button-1>", lambda e: self._pick_workdir())
-
-        def combo(label, width, values, get, set_cmd):
-            tk.Label(top, text=label, font=FONT_XS, bg=BG, fg=MUTED).pack(side="left", padx=(14, 2))
-            c = ttk.Combobox(top, width=width, state="readonly", values=values, font=FONT_XS)
-            c.set(get())
-            c.pack(side="left")
-            return c
-
-        self.cmb_provider = combo("提供商", 9, list(PROVIDERS), lambda: self.agent.config.provider, None)
-        self.cmb_provider.bind("<<ComboboxSelected>>", lambda e: self._on_provider_change())
-        self.cmb_model = combo("模型", 20, self.agent.config.models(), lambda: self.agent.config.model, None)
-        self.cmb_model.bind("<<ComboboxSelected>>", lambda e: self._on_model_change())
-        self.cmb_model.bind("<Return>", lambda e: self._on_model_change())
-        self.cmb_think = combo("思考", 7, THINKING_LEVELS, lambda: self.agent.config.thinking, None)
-        self.cmb_think.bind("<<ComboboxSelected>>", lambda e: self._on_thinking_change())
+        main.rowconfigure(0, weight=1)
 
         # 聊天区（可滚动画布 + 消息气泡容器）
         wrap = tk.Frame(main, bg=BG)
-        wrap.grid(row=1, column=0, sticky="nsew", padx=16)
+        wrap.grid(row=0, column=0, sticky="nsew", padx=16, pady=(12, 0))
         wrap.rowconfigure(0, weight=1)
         wrap.columnconfigure(0, weight=1)
         self.canvas = tk.Canvas(wrap, bg=BG, bd=0, highlightthickness=0)
@@ -192,9 +161,9 @@ class ChatWindow:
         for seq in ("<MouseWheel>",):
             self.canvas.bind_all(seq, self._on_wheel)
 
-        # 输入区
+        # 输入区（发送按钮悬浮右下角）
         comp = tk.Frame(main, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
-        comp.grid(row=2, column=0, sticky="ew", padx=16, pady=(6, 14))
+        comp.grid(row=1, column=0, sticky="ew", padx=16, pady=(8, 6))
         self.input = tk.Text(
             comp,
             height=3,
@@ -210,24 +179,81 @@ class ChatWindow:
         self.input.pack(fill="both", expand=True, padx=(4, 0), pady=(4, 0))
         self.input.bind("<Return>", self._on_enter)
         self.input.bind("<Shift-Return>", lambda e: None)
-        bar = tk.Frame(comp, bg=CARD)
-        bar.pack(fill="x", padx=10, pady=(0, 6))
-        tk.Label(
-            bar, text="Enter 发送 · Shift+Enter 换行 · /help 查看命令", font=FONT_XS, bg=CARD, fg=MUTED
-        ).pack(side="left")
         self.btn_send = tk.Label(
-            bar,
+            comp,
             text="发送 ⏎",
             font=("Microsoft YaHei UI", 10, "bold"),
             bg=ACCENT,
             fg="#0a0e1a",
             padx=18,
-            pady=6,
+            pady=8,
             cursor="hand2",
         )
-        self.btn_send.pack(side="right")
-        self.btn_send.bind("<Button-1>", lambda e: self._send())
+        self.btn_send.place(relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
         self.input.focus_set()
+
+        # 底部状态栏：工作区 / 设置 / 模型 / 思考 / 权限 / 密钥 / 用量 全部集中于此
+        status = tk.Frame(main, bg=SIDEBAR, highlightbackground=BORDER, highlightthickness=1)
+        status.grid(row=2, column=0, sticky="ew")
+
+        def sep():
+            tk.Label(status, text="│", font=FONT_XS, bg=SIDEBAR, fg=BORDER).pack(side="left")
+
+        def chip(text, fg=MUTED, cmd=None):
+            c = tk.Label(
+                status,
+                text=text,
+                font=FONT_XS,
+                bg=SIDEBAR,
+                fg=fg,
+                padx=10,
+                pady=7,
+                cursor="hand2" if cmd else "arrow",
+            )
+            c.pack(side="left")
+            if cmd:
+                c.bind("<Button-1>", lambda e: cmd())
+                c.bind("<Enter>", lambda e: c.configure(fg=TEXT))
+                c.bind("<Leave>", lambda e: c.configure(fg=fg))
+            return c
+
+        wd = self.agent.workdir
+        self.lbl_dir = chip("📂 " + (wd[:30] + "…" if len(wd) > 30 else wd), cmd=self._pick_workdir)
+        chip("⚙ 设置", fg=ACCENT, cmd=self._open_settings)
+        sep()
+        tk.Label(status, text="模型", font=FONT_XS, bg=SIDEBAR, fg=MUTED).pack(side="left", padx=(8, 2))
+        self.cmb_model = ttk.Combobox(
+            status,
+            width=20,
+            state="readonly",
+            font=FONT_XS,
+            values=self.agent.config.models(),
+        )
+        self.cmb_model.set(self.agent.config.model)
+        self.cmb_model.pack(side="left")
+        self.cmb_model.bind("<<ComboboxSelected>>", lambda e: self._on_model_change())
+        self.cmb_model.bind("<Return>", lambda e: self._on_model_change())
+        tk.Label(status, text="思考", font=FONT_XS, bg=SIDEBAR, fg=MUTED).pack(side="left", padx=(10, 2))
+        self.cmb_think = ttk.Combobox(status, width=6, state="readonly", font=FONT_XS, values=THINKING_LEVELS)
+        self.cmb_think.set(self.agent.config.thinking)
+        self.cmb_think.pack(side="left")
+        self.cmb_think.bind("<<ComboboxSelected>>", lambda e: self._on_thinking_change())
+        tk.Label(status, text="权限", font=FONT_XS, bg=SIDEBAR, fg=MUTED).pack(side="left", padx=(10, 2))
+        self.cmb_perm = ttk.Combobox(
+            status, width=9, state="readonly", font=FONT_XS, values=list(PERMISSION_MODES)
+        )
+        self.cmb_perm.set(self.agent.config.permission_mode)
+        self.cmb_perm.pack(side="left")
+        self.cmb_perm.bind("<<ComboboxSelected>>", lambda e: self._on_perm_change())
+        self.lbl_perm = tk.Label(status, text="", font=FONT_XS, bg=SIDEBAR, fg=MUTED)
+        self.lbl_perm.pack(side="left", padx=(4, 0))
+        self.lbl_key = tk.Label(
+            status, text="🔑", font=FONT_XS, bg=SIDEBAR, fg=MUTED, padx=10, cursor="hand2"
+        )
+        self.lbl_key.pack(side="right")
+        self.lbl_key.bind("<Button-1>", lambda e: self._open_settings())
+        self.lbl_usage = tk.Label(status, text="", font=FONT_XS, bg=SIDEBAR, fg=MUTED, padx=8)
+        self.lbl_usage.pack(side="right")
         self._refresh_status()
 
     # ------------------------------------------------------------ 气泡渲染
@@ -279,8 +305,15 @@ class ChatWindow:
         c = self.agent.config
         ok = bool(c.api_key)
         self.lbl_dot.configure(text="● 在线" if ok else "○ 离线（简单模式）", fg=GREEN if ok else MUTED)
-        self.lbl_prov.configure(text=f"{c.provider} · {c.model}\n思考: {c.thinking}")
-        self.lbl_dir.configure(text="📂 " + self.agent.workdir)
+        self.lbl_prov.configure(text=f"{c.provider} · {c.model}")
+        wd = self.agent.workdir
+        self.lbl_dir.configure(text="📂 " + (wd[:30] + "…" if len(wd) > 30 else wd))
+        self.lbl_perm.configure(text=PERMISSION_LABELS.get(c.permission_mode, c.permission_mode))
+        self.cmb_perm.set(c.permission_mode)
+        self.lbl_key.configure(text=f"🔑 {c.key_source()}", fg=GREEN if ok else MUTED)
+        u = self.agent.usage
+        if u["calls"]:
+            self.lbl_usage.configure(text=f"{u['total_tokens']:,} tok")
 
     def _refresh_sessions(self) -> None:
         for w in self.sess_box.winfo_children():
