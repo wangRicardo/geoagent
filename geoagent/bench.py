@@ -13,16 +13,14 @@ from __future__ import annotations
 
 import json
 import os
-import re
-from typing import Callable, Dict, List, Optional
+from collections.abc import Callable
 
 from .tools.base import registry
 
-SCENARIOS_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                              "benchmarks", "scenarios.json")
+SCENARIOS_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "benchmarks", "scenarios.json")
 
 
-def load_scenarios(path: Optional[str] = None) -> List[Dict]:
+def load_scenarios(path: str | None = None) -> list[dict]:
     path = path or SCENARIOS_PATH
     with open(path, encoding="utf-8") as f:
         return json.load(f)["scenarios"]
@@ -30,13 +28,12 @@ def load_scenarios(path: Optional[str] = None) -> List[Dict]:
 
 def run_benchmark(
     agent,
-    scenarios: Optional[List[Dict]] = None,
-    on_progress: Optional[Callable[[str], None]] = None,
+    scenarios: list[dict] | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ) -> str:
     """运行全部场景，返回 Markdown 评测报告。需要 agent 在线（会真实调用 LLM）。"""
     if not agent.online:
-        return ("ERROR: 评测需要 API 密钥（会真实调用 LLM）。"
-                "请先配置密钥再运行 ricardo bench。")
+        return "ERROR: 评测需要 API 密钥（会真实调用 LLM）。请先配置密钥再运行 ricardo bench。"
     scenarios = scenarios or load_scenarios()
     log = (lambda m: on_progress(m)) if on_progress else (lambda m: None)
     results = []
@@ -46,7 +43,7 @@ def run_benchmark(
         if unknown:
             results.append((name, False, f"场景引用了不存在的工具: {unknown}"))
             continue
-        called: List[str] = []
+        called: list[str] = []
 
         def on_event(ev, _called=called):
             if ev.get("type") == "tool_start":
@@ -65,9 +62,13 @@ def run_benchmark(
             results.append((name, True, f"命中 {expected}，实际调用: {called}"))
 
     passed = sum(1 for _, ok, _ in results if ok)
-    lines = [f"# Ricardo Agent 评测报告", "",
-             f"- 场景: {len(results)} | 通过: {passed} | 失败: {len(results) - passed}",
-             f"- 通过率: {passed / len(results) * 100:.0f}%", ""]
+    lines = [
+        "# Ricardo Agent 评测报告",
+        "",
+        f"- 场景: {len(results)} | 通过: {passed} | 失败: {len(results) - passed}",
+        f"- 通过率: {passed / len(results) * 100:.0f}%",
+        "",
+    ]
     for name, ok, detail in results:
         mark = "✅" if ok else "❌"
         lines.append(f"- {mark} **{name}** — {detail}")

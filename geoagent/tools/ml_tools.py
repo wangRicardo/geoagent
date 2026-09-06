@@ -7,15 +7,13 @@
 
 from __future__ import annotations
 
-from typing import List
-
 import numpy as np
 
 from .base import registry
 
 
 @registry.register(category="ml")
-def dataset_profile(features: List[List[float]], target: List[float]) -> str:
+def dataset_profile(features: list[list[float]], target: list[float]) -> str:
     """对特征矩阵 X 与标签 y 做快速画像：形状、统计量、缺失值、类别分布。"""
     X = np.asarray(features, dtype=float)
     y = np.asarray(target)
@@ -49,18 +47,21 @@ def _classify_or_regress(y: np.ndarray) -> str:
 
 @registry.register(category="ml")
 def quick_train(
-    features: List[List[float]],
-    target: List[float],
+    features: list[list[float]],
+    target: list[float],
     test_size: float = 0.25,
     random_state: int = 42,
 ) -> str:
     """一键基线建模：自动判断分类/回归，训练随机森林并报告测试集指标。"""
     try:
         from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-        from sklearn.model_selection import train_test_split
         from sklearn.metrics import (
-            accuracy_score, f1_score, r2_score, mean_absolute_error,
+            accuracy_score,
+            f1_score,
+            mean_absolute_error,
+            r2_score,
         )
+        from sklearn.model_selection import train_test_split
     except ImportError:
         return "ERROR: 需要 scikit-learn。请先安装: pip install scikit-learn"
 
@@ -98,8 +99,8 @@ def quick_train(
 
 @registry.register(category="ml")
 def cross_validate(
-    features: List[List[float]],
-    target: List[float],
+    features: list[list[float]],
+    target: list[float],
     k: int = 5,
     random_state: int = 42,
 ) -> str:
@@ -119,14 +120,11 @@ def cross_validate(
         model = RandomForestRegressor(n_estimators=100, random_state=random_state)
         scoring = "r2"
     scores = cross_val_score(model, X, y, cv=k, scoring=scoring)
-    return (
-        f"{k} 折 {scoring}: {np.round(scores, 4).tolist()}\n"
-        f"均值 {scores.mean():.4f} ± {scores.std():.4f}"
-    )
+    return f"{k} 折 {scoring}: {np.round(scores, 4).tolist()}\n均值 {scores.mean():.4f} ± {scores.std():.4f}"
 
 
 @registry.register(category="ml")
-def feature_correlation(features: List[List[float]], threshold: float = 0.8) -> str:
+def feature_correlation(features: list[list[float]], threshold: float = 0.8) -> str:
     """计算特征间 Pearson 相关矩阵，列出相关系数超过阈值的特征对（共线性预警）。"""
     X = np.asarray(features, dtype=float)
     if X.shape[1] < 2:
@@ -137,14 +135,13 @@ def feature_correlation(features: List[List[float]], threshold: float = 0.8) -> 
         for j in range(i + 1, X.shape[1]):
             if abs(corr[i, j]) >= threshold:
                 pairs.append(f"f{i}~f{j}: {corr[i, j]:.3f}")
-    return (
-        f"相关矩阵:\n{np.round(corr, 3)}\n"
-        + (f"高相关特征对(|r|>={threshold}): {'; '.join(pairs)}" if pairs else "没有超过阈值的特征对")
+    return f"相关矩阵:\n{np.round(corr, 3)}\n" + (
+        f"高相关特征对(|r|>={threshold}): {'; '.join(pairs)}" if pairs else "没有超过阈值的特征对"
     )
 
 
 @registry.register(category="ml")
-def confusion_report(features: List[List[float]], target: List[float]) -> str:
+def confusion_report(features: list[list[float]], target: list[float]) -> str:
     """训练随机森林分类器并输出测试集混淆矩阵与分类报告（precision/recall/F1）。"""
     try:
         from sklearn.ensemble import RandomForestClassifier
@@ -164,7 +161,7 @@ def confusion_report(features: List[List[float]], target: List[float]) -> str:
 
 
 @registry.register(category="ml")
-def pca_reduce(features: List[List[float]], n_components: int = 2) -> str:
+def pca_reduce(features: list[list[float]], n_components: int = 2) -> str:
     """PCA 降维，返回各主成分解释方差比与前几个样本的投影坐标。"""
     try:
         from sklearn.decomposition import PCA

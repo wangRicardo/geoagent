@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.0 (2026-09-06)
+
+工业级质量基建。
+
+- CI：GitHub Actions —— ruff lint + 三平台三版本 pytest 矩阵 + wheel 构建与 twine 校验
+- Release 流水线：打 tag 自动构建 wheel + 双 exe（含图标）并发布 GitHub Release；
+  配置 PUBLISH_PYPI 与 Trusted Publisher 后自动发布 PyPI
+- 代码质量：ruff 全绿（0 违规）+ 统一格式化；版本号单一来源（geoagent.__version__ → pyproject dynamic）
+- 可观测性：滚动日志（~/.geoagent/logs/ricardo.log，5MB×3）；CLI/GUI 全局未捕获异常钩子，
+  GUI 崩溃弹窗告知日志位置，不再无声闪退
+- 工程文档：CONTRIBUTING.md（开发流程/工具规范/质量门）、SECURITY.md（安全边界与漏洞报告）
+
 ## v0.7.1 (2026-09-06)
 
 桌面版界面重设计 + 品牌图标。

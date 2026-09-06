@@ -7,11 +7,13 @@
 
 from __future__ import annotations
 
+import builtins
 import inspect
 import json
 import typing
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List
+from typing import Any
 
 
 @dataclass
@@ -19,10 +21,10 @@ class Tool:
     name: str
     description: str
     func: Callable
-    parameters: Dict[str, Any] = field(default_factory=dict)
+    parameters: dict[str, Any] = field(default_factory=dict)
     category: str = "general"
 
-    def schema(self) -> Dict[str, Any]:
+    def schema(self) -> dict[str, Any]:
         """返回可交给 LLM function-calling 的工具描述。"""
         return {
             "name": self.name,
@@ -37,9 +39,9 @@ class Tool:
 
 def _python_type_to_json(tp: Any) -> str:
     origin = typing.get_origin(tp)
-    if origin in (list, List):
+    if origin in (list, list):
         return "array"
-    if origin in (dict, Dict):
+    if origin in (dict, dict):
         return "object"
     if tp in (int,):
         return "integer"
@@ -50,10 +52,10 @@ def _python_type_to_json(tp: Any) -> str:
     return "string"
 
 
-def _build_parameters(func: Callable) -> Dict[str, Any]:
+def _build_parameters(func: Callable) -> dict[str, Any]:
     sig = inspect.signature(func)
-    props: Dict[str, Any] = {}
-    required: List[str] = []
+    props: dict[str, Any] = {}
+    required: list[str] = []
     for pname, param in sig.parameters.items():
         if param.default is inspect.Parameter.empty:
             required.append(pname)
@@ -68,7 +70,7 @@ def _build_parameters(func: Callable) -> Dict[str, Any]:
 
 class ToolRegistry:
     def __init__(self) -> None:
-        self._tools: Dict[str, Tool] = {}
+        self._tools: dict[str, Tool] = {}
 
     def register(self, name: str = "", category: str = "general") -> Callable:
         """``@registry.register()`` 装饰器，把函数注册为工具。"""
@@ -94,13 +96,13 @@ class ToolRegistry:
             raise KeyError(f"未知工具: {name}。可用: {sorted(self._tools)}")
         return self._tools[name]
 
-    def list(self) -> List[Tool]:
+    def list(self) -> builtins.list[Tool]:
         return sorted(self._tools.values(), key=lambda t: (t.category, t.name))
 
-    def schemas(self) -> List[Dict[str, Any]]:
+    def schemas(self) -> builtins.list[dict[str, Any]]:
         return [t.schema() for t in self.list()]
 
-    def execute(self, name: str, args: Dict[str, Any]) -> str:
+    def execute(self, name: str, args: dict[str, Any]) -> str:
         """执行工具并把结果转成字符串（agent 循环里统一用文本回传 LLM）。"""
         try:
             result = self.get(name)(**args)

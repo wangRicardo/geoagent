@@ -1,10 +1,13 @@
+[tool.setuptools.dynamic]
+version = { attr = "geoagent.__version__" }
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "geoagent-ml"
-version = "0.7.1"
+dynamic = ["version"]
 description = "Ricardo Agent — a personal AI agent for geophysics & machine learning research — 地球物理 × 机器学习个人研究 Agent"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -43,3 +46,18 @@ Repository = "https://github.com/wangRicardo/geoagent"
 
 [tool.setuptools.packages.find]
 include = ["geoagent*"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "E501",   # 行长由 ruff format 管理
+    "DTZ",    # 研究工具本地时间可接受
+    "SIM", "PLW", "BLE", "FURB", "RUF",
+]
+
+[tool.ruff.format]
+quote-style = "double"

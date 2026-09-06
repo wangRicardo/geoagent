@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import os
-from typing import List, Optional
 
 import numpy as np
 
@@ -35,6 +34,7 @@ def _auto_vision_check(path: str) -> str:
         return ""
     try:
         from .vision_tools import see_image
+
         out = see_image(path, "快速质检：这张图是否达到论文插图水准？只给一句话结论。")
         return "\n  👁 视觉自查: " + out.splitlines()[0] if out else ""
     except Exception:  # noqa: BLE001
@@ -43,13 +43,14 @@ def _auto_vision_check(path: str) -> str:
 
 @registry.register(category="plot")
 def plot_seismic_section(
-    traces: List[List[float]],
+    traces: list[list[float]],
     dt_ms: float = 1.0,
     filename: str = "seismic_section.png",
     title: str = "Seismic Section",
 ) -> str:
     """绘制二维地震剖面（每行一道，波形填充图），保存 PNG 并返回路径。"""
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
@@ -61,7 +62,6 @@ def plot_seismic_section(
     norm = np.abs(data).max() or 1.0
     fig, ax = plt.subplots(figsize=(8, 6))
     # 变面积填充：正振幅黑、负振幅红（SEG 惯例的简化版）
-    clip = 1.5
     for i in range(nt):
         tr = data[i] / norm
         ax.fill_betweenx(t, i + tr, i, where=tr > 0, color="k", lw=0)
@@ -78,15 +78,16 @@ def plot_seismic_section(
 
 @registry.register(category="plot")
 def plot_crossplot(
-    x: List[float],
-    y: List[float],
+    x: list[float],
+    y: list[float],
     x_label: str = "X",
     y_label: str = "Y",
-    color_by: Optional[List[float]] = None,
+    color_by: list[float] | None = None,
     filename: str = "crossplot.png",
 ) -> str:
     """绘制交会图（散点图），可用第三变量着色；自动计算 Pearson 相关系数。"""
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
@@ -96,15 +97,15 @@ def plot_crossplot(
     fig, ax = plt.subplots(figsize=(7, 6))
     if color_by is not None:
         cv = np.asarray(color_by, float)
-        sc = ax.scatter(xv, yv, c=cv, cmap="viridis", s=18, alpha=.85)
+        sc = ax.scatter(xv, yv, c=cv, cmap="viridis", s=18, alpha=0.85)
         fig.colorbar(sc, ax=ax, label="color")
     else:
-        ax.scatter(xv, yv, s=18, alpha=.75, c="#22d3ee")
+        ax.scatter(xv, yv, s=18, alpha=0.75, c="#22d3ee")
     r = np.corrcoef(xv, yv)[0, 1]
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
     ax.set_title(f"{y_label} vs {x_label}  (r = {r:.3f})")
-    ax.grid(alpha=.25)
+    ax.grid(alpha=0.25)
     path = _save(fig, filename)
     plt.close(fig)
     return f"交会图已保存: {path}\n  {xv.size} 点, Pearson r = {r:.4f}"
@@ -112,13 +113,14 @@ def plot_crossplot(
 
 @registry.register(category="plot")
 def plot_well_logs(
-    curves: List[List[float]],
-    names: List[str],
+    curves: list[list[float]],
+    names: list[str],
     depth_unit: str = "m",
     filename: str = "well_logs.png",
 ) -> str:
     """并排绘制多条测井曲线（共享深度轴，深度向下增加）。"""
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
@@ -129,11 +131,11 @@ def plot_well_logs(
     fig, axes = plt.subplots(1, n, figsize=(2.2 * n, 7), sharey=True)
     if n == 1:
         axes = [axes]
-    for ax, cur, name in zip(axes, curves, names):
+    for ax, cur, name in zip(axes, curves, names, strict=False):
         c = np.asarray(cur, float)
         ax.plot(c, depth, lw=1.1, color="#818cf8")
         ax.set_xlabel(name)
-        ax.grid(alpha=.25)
+        ax.grid(alpha=0.25)
     axes[0].set_ylabel(f"Depth ({depth_unit})")
     axes[0].invert_yaxis()
     fig.suptitle("Well Log Curves")
@@ -144,14 +146,15 @@ def plot_well_logs(
 
 @registry.register(category="plot")
 def plot_time_series(
-    series: List[List[float]],
-    labels: List[str],
+    series: list[list[float]],
+    labels: list[str],
     dt_s: float = 1.0,
     filename: str = "timeseries.png",
     title: str = "Time Series",
 ) -> str:
     """叠加绘制多条时间序列（波形对比、滤波前后对比等场景）。"""
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
@@ -159,12 +162,12 @@ def plot_time_series(
         return "ERROR: series 与 labels 数量需一致且非空"
     t = np.arange(len(series[0])) * dt_s
     fig, ax = plt.subplots(figsize=(10, 4.5))
-    for s, lab in zip(series, labels):
+    for s, lab in zip(series, labels, strict=False):
         ax.plot(t, np.asarray(s, float), lw=1.0, label=lab)
     ax.set_xlabel("Time (s)")
     ax.set_title(title)
     ax.legend(frameon=False)
-    ax.grid(alpha=.25)
+    ax.grid(alpha=0.25)
     path = _save(fig, filename)
     plt.close(fig)
     return f"时序图已保存: {path}\n  {len(series)} 条曲线 x {t.size} 点, dt={dt_s}s"
@@ -172,13 +175,14 @@ def plot_time_series(
 
 @registry.register(category="plot")
 def plot_spectrogram(
-    data: List[float],
+    data: list[float],
     dt_ms: float = 1.0,
     filename: str = "spectrogram.png",
     title: str = "Time-Frequency Spectrogram",
 ) -> str:
     """时频谱图（STFT），展示信号频率成分随时间的变化（地震道/测井曲线均适用）。"""
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from scipy.signal import spectrogram
@@ -195,13 +199,15 @@ def plot_spectrogram(
     path = _save(fig, filename)
     plt.close(fig)
     peak_f = float(f[np.argmax(Sxx.mean(axis=1))])
-    return (f"时频谱图已保存: {path}\n  {x.size} 采样, 频带 0~{fs/2:.0f} Hz, "
-            f"平均能量主频 {peak_f:.1f} Hz" + _auto_vision_check(path))
+    return (
+        f"时频谱图已保存: {path}\n  {x.size} 采样, 频带 0~{fs / 2:.0f} Hz, "
+        f"平均能量主频 {peak_f:.1f} Hz" + _auto_vision_check(path)
+    )
 
 
 @registry.register(category="plot")
 def plot_amplitude_section(
-    traces: List[List[float]],
+    traces: list[list[float]],
     dt_ms: float = 1.0,
     filename: str = "amp_section.png",
     title: str = "Amplitude Section",
@@ -209,6 +215,7 @@ def plot_amplitude_section(
 ) -> str:
     """振幅彩色剖面（imshow）：波形细节的直观显示，适合对比处理前后。"""
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
@@ -217,29 +224,38 @@ def plot_amplitude_section(
         return f"ERROR: traces 需是二维列表（每行一道），当前 {data.ndim} 维"
     vmax = float(np.abs(data).max()) or 1.0
     fig, ax = plt.subplots(figsize=(9, 5.5))
-    im = ax.imshow(data.T, aspect="auto", cmap=cmap, vmin=-vmax, vmax=vmax,
-                   extent=[0, data.shape[0], data.shape[1] * dt_ms, 0])
+    im = ax.imshow(
+        data.T,
+        aspect="auto",
+        cmap=cmap,
+        vmin=-vmax,
+        vmax=vmax,
+        extent=[0, data.shape[0], data.shape[1] * dt_ms, 0],
+    )
     fig.colorbar(im, ax=ax, label="Amplitude")
     ax.set_xlabel("Trace")
     ax.set_ylabel("Time (ms)")
     ax.set_title(title)
     path = _save(fig, filename)
     plt.close(fig)
-    return (f"振幅剖面已保存: {path}\n  {data.shape[0]} 道 x {data.shape[1]} 采样, "
-            f"色标 ±{vmax:.3g}" + _auto_vision_check(path))
+    return (
+        f"振幅剖面已保存: {path}\n  {data.shape[0]} 道 x {data.shape[1]} 采样, "
+        f"色标 ±{vmax:.3g}" + _auto_vision_check(path)
+    )
 
 
 @registry.register(category="plot")
 def plot_three_component(
-    data_e: List[float],
-    data_n: List[float],
-    data_z: List[float],
+    data_e: list[float],
+    data_n: list[float],
+    data_z: list[float],
     dt_s: float = 0.01,
     filename: str = "three_component.png",
     station: str = "Station",
 ) -> str:
     """三分量地震图（E/N/Z 并排），台站事件分析的标准展示。"""
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
@@ -248,14 +264,16 @@ def plot_three_component(
         return "ERROR: 三分量长度必须一致"
     t = np.arange(comps[0].size) * dt_s
     fig, axes = plt.subplots(3, 1, figsize=(9, 6), sharex=True)
-    for ax, c, name in zip(axes, comps, ["E", "N", "Z"]):
+    for ax, c, name in zip(axes, comps, ["E", "N", "Z"], strict=False):
         ax.plot(t, c, lw=0.8, color="#22d3ee" if name != "Z" else "#f472b6")
         ax.set_ylabel(f"{name}\n(counts)")
-        ax.grid(alpha=.25)
+        ax.grid(alpha=0.25)
     axes[-1].set_xlabel("Time (s)")
     fig.suptitle(f"Three-Component Seismogram — {station}")
     path = _save(fig, filename)
     plt.close(fig)
     peak_z = float(np.abs(comps[2]).max())
-    return (f"三分量图已保存: {path}\n  {comps[0].size} 采样, Z 分量最大振幅 {peak_z:.3g}"
-            + _auto_vision_check(path))
+    return (
+        f"三分量图已保存: {path}\n  {comps[0].size} 采样, Z 分量最大振幅 {peak_z:.3g}"
+        + _auto_vision_check(path)
+    )

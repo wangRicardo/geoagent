@@ -1,9 +1,16 @@
 # Ricardo Agent —— 你的地球物理 × 机器学习个人 Agent
 
+[![CI](https://github.com/wangRicardo/geoagent/actions/workflows/ci.yml/badge.svg)](https://github.com/wangRicardo/geoagent/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-22d3ee.svg)](LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/geoagent-ml?color=818cf8)](https://pypi.org/project/geoagent-ml/)
+[![Python](https://img.shields.io/badge/Python-3.10+-34d399.svg)](pyproject.toml)
+
 一个从零开始、可自己持续扩展的研究 agent 框架（当前版本 **v0.3.0**，内置 56 个工具，可在任意文件夹工作）。核心理念：**模型可以换，工具是你的资产**。
 agent 的智力来自 LLM，价值来自你亲手写的领域工具（读 SEG-Y、看测井曲线、快速建模……）。
 
 官网：<https://wangricardo.github.io/geoagent/>
+
+安全须知见 [SECURITY.md](SECURITY.md)；参与贡献见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 安装
 

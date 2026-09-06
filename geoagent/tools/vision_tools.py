@@ -38,10 +38,7 @@ def see_image(path: str, question: str = "请描述并检查这张图") -> str:
 
     cfg = AgentConfig()
     if not cfg.api_key:
-        return (
-            "ERROR: 视觉自查需要 API 密钥（offline 模式无法看图）。"
-            "配置密钥后即可让 agent 检查生成的图件。"
-        )
+        return "ERROR: 视觉自查需要 API 密钥（offline 模式无法看图）。配置密钥后即可让 agent 检查生成的图件。"
     root = os.getcwd()
     full = os.path.abspath(os.path.join(root, path))
     if os.path.commonpath([root, full]) != root:

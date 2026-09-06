@@ -15,24 +15,26 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
-from .config import AgentConfig, THINKING_LEVELS
-from .tools.base import ToolRegistry, registry as default_registry
+from .config import AgentConfig
+from .tools.base import ToolRegistry
+from .tools.base import registry as default_registry
 
 SESSIONS_DIR = Path.home() / ".geoagent" / "sessions"
-EventCallback = Optional[Callable[[Dict[str, Any]], None]]
+EventCallback = Callable[[dict[str, Any]], None] | None
 
 
 class GeoAgent:
     def __init__(
         self,
-        registry: Optional[ToolRegistry] = None,
+        registry: ToolRegistry | None = None,
         max_tool_rounds: int = 8,
         max_history: int = 40,
-        workdir: Optional[str] = None,
+        workdir: str | None = None,
         system_prompt: str = (
             "你是 Ricardo Agent，地球物理与机器学习领域的研究助手。你在用户指定的"
             "工作文件夹内工作，可以调用工具读写文件、读取地震/测井数据、做信号处理、"
@@ -46,7 +48,7 @@ class GeoAgent:
         self.max_history = max_history
         self.system_prompt = system_prompt
         self.config = AgentConfig()
-        self.history: List[Dict[str, Any]] = []
+        self.history: list[dict[str, Any]] = []
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "calls": 0}
         self._client = None
         self._client_key: tuple = ()
@@ -80,8 +82,8 @@ class GeoAgent:
             return
         try:
             from openai import OpenAI
-        except ImportError:
-            raise RuntimeError("需要 openai 库：pip install openai")
+        except ImportError as exc:
+            raise RuntimeError("需要 openai 库：pip install openai") from exc
         self._client = OpenAI(api_key=key, base_url=self.config.base_url)
         self._client_key = cfg_key
 
@@ -97,7 +99,7 @@ class GeoAgent:
 
     # -- 带重试的流式请求 -----------------------------------------------------------
 
-    def _create_stream(self, params: Dict[str, Any]):
+    def _create_stream(self, params: dict[str, Any]):
         """指数退避重试（最多 3 次）；流开始后不再重试，避免重复输出。"""
         last_exc: Exception | None = None
         # 请求用量统计；不支持的端点会报错，去掉该参数重试一次
@@ -106,19 +108,22 @@ class GeoAgent:
             try:
                 return self._client.chat.completions.create(**params, stream=True)
             except Exception as exc:  # noqa: BLE001
-                if "stream_options" in params and attempt == 0 and (
-                        "stream_options" in str(exc) or "usage" in str(exc).lower()):
+                if (
+                    "stream_options" in params
+                    and attempt == 0
+                    and ("stream_options" in str(exc) or "usage" in str(exc).lower())
+                ):
                     params.pop("stream_options")
                     continue
                 last_exc = exc
                 if attempt < 2:
-                    time.sleep(1.5 * (2 ** attempt))
+                    time.sleep(1.5 * (2**attempt))
         raise RuntimeError(f"LLM 调用失败（已重试 3 次）: {last_exc}")
 
-    def _consume_stream(self, stream, emit: Callable[[Dict[str, Any]], None]):
+    def _consume_stream(self, stream, emit: Callable[[dict[str, Any]], None]):
         """消费流式响应：文本逐字 emit；工具调用按 index 拼装；统计用量。"""
-        parts: List[str] = []
-        tc: Dict[int, Dict[str, str]] = {}
+        parts: list[str] = []
+        tc: dict[int, dict[str, str]] = {}
         for chunk in stream:
             usage = getattr(chunk, "usage", None)
             if usage is not None:  # 最后一个 chunk 携带用量
@@ -134,7 +139,7 @@ class GeoAgent:
             if delta.content:
                 parts.append(delta.content)
                 emit({"type": "delta", "text": delta.content})
-            for d in (delta.tool_calls or []):
+            for d in delta.tool_calls or []:
                 slot = tc.setdefault(d.index, {"id": "", "name": "", "args": ""})
                 if d.id:
                     slot["id"] = d.id
@@ -154,8 +159,8 @@ class GeoAgent:
         drop += drop % 2  # 成对丢，保证剩余首条是 user
         self.history = self.history[drop:]
 
-    def _request_params(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
-        params: Dict[str, Any] = dict(model=self.config.model, messages=messages)
+    def _request_params(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
+        params: dict[str, Any] = dict(model=self.config.model, messages=messages)
         if tools:
             params["tools"] = tools
         if self.config.thinking != "off":
@@ -166,22 +171,31 @@ class GeoAgent:
 
     def usage_report(self) -> str:
         u = self.usage
-        return (f"本次会话 LLM 用量: 调用 {u['calls']} 次 | "
-                f"输入 {u['prompt_tokens']:,} + 输出 {u['completion_tokens']:,} "
-                f"= {u['total_tokens']:,} tokens")
+        return (
+            f"本次会话 LLM 用量: 调用 {u['calls']} 次 | "
+            f"输入 {u['prompt_tokens']:,} + 输出 {u['completion_tokens']:,} "
+            f"= {u['total_tokens']:,} tokens"
+        )
 
     def save_session(self, name: str = "session") -> str:
         SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
         safe = "".join(c for c in name if c.isalnum() or c in "-_") or "session"
         path = SESSIONS_DIR / f"{safe}.json"
-        path.write_text(json.dumps({
-            "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "workdir": self.workdir,
-            "provider": self.config.provider,
-            "model": self.config.model,
-            "thinking": self.config.thinking,
-            "history": self.history,
-        }, ensure_ascii=False, indent=2), encoding="utf-8")
+        path.write_text(
+            json.dumps(
+                {
+                    "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "workdir": self.workdir,
+                    "provider": self.config.provider,
+                    "model": self.config.model,
+                    "thinking": self.config.thinking,
+                    "history": self.history,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
         return f"会话已保存: {path.name}（{len(self.history)} 条消息）"
 
     def load_session(self, name: str = "session") -> str:
@@ -195,8 +209,10 @@ class GeoAgent:
         self.config.set_thinking(data["thinking"])
         self.set_workdir(data["workdir"])
         self.history = data["history"]
-        return (f"会话已恢复: {path.name}（{data['saved_at']} 保存，{len(self.history)} 条消息，"
-                f"工作区 {self.workdir}）")
+        return (
+            f"会话已恢复: {path.name}（{data['saved_at']} 保存，{len(self.history)} 条消息，"
+            f"工作区 {self.workdir}）"
+        )
 
     def list_sessions(self) -> str:
         if not SESSIONS_DIR.exists():
@@ -207,15 +223,19 @@ class GeoAgent:
     def export_transcript(self, path: str) -> str:
         """把当前对话导出为 Markdown 研究日志（写到工作目录内）。"""
         import re
+
         root = os.getcwd()
         full = os.path.abspath(os.path.join(root, path))
         if os.path.commonpath([root, full]) != root:
             return f"ERROR: 路径越出工作目录: {path}"
-        lines = ["# Ricardo Agent 对话记录", "",
-                 f"- 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                 f"- 工作区: `{self.workdir}`",
-                 f"- 模型: {self.config.provider}/{self.config.model} (思考: {self.config.thinking})",
-                 ""]
+        lines = [
+            "# Ricardo Agent 对话记录",
+            "",
+            f"- 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"- 工作区: `{self.workdir}`",
+            f"- 模型: {self.config.provider}/{self.config.model} (思考: {self.config.thinking})",
+            "",
+        ]
         for m in self.history:
             role = {"user": "## 🧑 你", "assistant": "## 🤖 Ricardo"}.get(m["role"], f"## {m['role']}")
             content = m["content"]
@@ -228,7 +248,7 @@ class GeoAgent:
 
     # -- 工具执行 ---------------------------------------------------------------
 
-    def run_tool(self, name: str, args: Dict[str, Any]) -> str:
+    def run_tool(self, name: str, args: dict[str, Any]) -> str:
         return self.registry.execute(name, args)
 
     # -- 对话 ----------------------------------------------------------------
@@ -238,7 +258,7 @@ class GeoAgent:
         {"type": "delta", "text": ...} / {"type": "tool_start", "name","args"}
         / {"type": "tool_end", "name", "result"} / {"type": "error", "message"}
         """
-        emit: Callable[[Dict[str, Any]], None] = on_event or (lambda ev: None)
+        emit: Callable[[dict[str, Any]], None] = on_event or (lambda ev: None)
         self.history.append({"role": "user", "content": user_message})
         self._trim_history()
         if not self.online:
@@ -269,8 +289,11 @@ class GeoAgent:
                 self.history.append({"role": "assistant", "content": content})
                 return content
             tool_calls = [
-                {"id": s["id"] or f"call_{i}", "type": "function",
-                 "function": {"name": s["name"], "arguments": s["args"]}}
+                {
+                    "id": s["id"] or f"call_{i}",
+                    "type": "function",
+                    "function": {"name": s["name"], "arguments": s["args"]},
+                }
                 for i, s in sorted(tc_acc.items())
             ]
             messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})

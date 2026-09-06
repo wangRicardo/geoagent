@@ -8,14 +8,12 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 import numpy as np
 
 from .base import registry
 
 
-def _as_traces(traces: List[List[float]]) -> np.ndarray:
+def _as_traces(traces: list[list[float]]) -> np.ndarray:
     data = np.asarray(traces, dtype=float)
     if data.ndim != 2:
         raise ValueError(f"traces 需是二维列表（每行一道），当前 {data.ndim} 维")
@@ -34,9 +32,9 @@ def _velocity_at(t_ms: np.ndarray, velocity) -> np.ndarray:
 
 @registry.register(category="processing")
 def nmo_velocity_scan(
-    traces: List[List[float]],
+    traces: list[list[float]],
     dt_ms: float = 2.0,
-    offsets_m: Optional[List[float]] = None,
+    offsets_m: list[float] | None = None,
     v_min: float = 1500.0,
     v_max: float = 4500.0,
     n_velocities: int = 60,
@@ -65,14 +63,13 @@ def nmo_velocity_scan(
     for j, v in enumerate(velocities):
         for i in range(half, ns - half, 2):  # 每 2 采样算一次
             t0 = t[i]
-            tx = np.sqrt(t0 ** 2 + (x / v * 1000.0) ** 2)
+            tx = np.sqrt(t0**2 + (x / v * 1000.0) ** 2)
             if tx.min() < half * dt_ms or tx.max() + half * dt_ms > t[-1]:
                 continue
             # 各道沿其双曲线取窗口样本
-            win = np.array([np.interp(tx[k] + win_offsets, t, data[k])
-                            for k in range(nt_tr)])
+            win = np.array([np.interp(tx[k] + win_offsets, t, data[k]) for k in range(nt_tr)])
             num = win.sum(axis=0) ** 2
-            den = (win ** 2).sum(axis=0) * nt_tr + 1e-12
+            den = (win**2).sum(axis=0) * nt_tr + 1e-12
             sem[i, j] = num.sum() / den.sum()
 
     picks = []
@@ -83,7 +80,7 @@ def nmo_velocity_scan(
             break
         picks.append((round(float(t[i]), 1), round(float(velocities[j])), round(float(sem_s[i, j]), 3)))
         # 抑制已拾取点附近，避免重复
-        sem_s[max(0, i - int(100 / dt_ms)):i + int(100 / dt_ms), :] = 0
+        sem_s[max(0, i - int(100 / dt_ms)) : i + int(100 / dt_ms), :] = 0
     if not picks:
         return "速度扫描未发现明显能量聚焦，检查数据或放宽速度范围。"
     return "速度谱拾取（t0_ms, v_m/s, semblance）:\n" + "\n".join(f"  {p}" for p in picks)
@@ -91,9 +88,9 @@ def nmo_velocity_scan(
 
 @registry.register(category="processing")
 def nmo_correct(
-    traces: List[List[float]],
+    traces: list[list[float]],
     dt_ms: float = 2.0,
-    offsets_m: Optional[List[float]] = None,
+    offsets_m: list[float] | None = None,
     velocity=3000.0,
     stretch_limit: float = 0.5,
 ) -> str:
@@ -110,12 +107,11 @@ def nmo_correct(
     t = np.arange(ns) * dt_ms
     out = np.zeros_like(data)
     for k in range(nt_tr):
-        tx = np.sqrt(t ** 2 + (x[k] / _velocity_at(t, velocity) * 1000.0) ** 2)
+        tx = np.sqrt(t**2 + (x[k] / _velocity_at(t, velocity) * 1000.0) ** 2)
         out[k] = np.interp(t, tx, data[k], left=0, right=0)
         # 拉伸切除：dt/dt0 过大的区域置零
         stretch = np.gradient(tx, t, edge_order=1)
         out[k, (stretch > 1 + stretch_limit) | ~np.isfinite(stretch)] = 0.0
-    from .base import registry as _reg  # 复用结果序列化
     return (
         f"NMO 校正完成: {nt_tr} 道 x {ns} 采样, v={velocity if np.isscalar(velocity) else '折线'}\n"
         f"校正后道集(前3道各前20采样): {np.round(out[:3, :20], 4).tolist()}"
@@ -123,12 +119,12 @@ def nmo_correct(
 
 
 @registry.register(category="processing")
-def stack_traces(traces: List[List[float]]) -> str:
+def stack_traces(traces: list[list[float]]) -> str:
     """道叠加（均值），返回叠加道及其统计——NMO 后叠加可压制随机噪声 √N 倍。"""
     data = _as_traces(traces)
     stacked = data.mean(axis=0)
-    rms_before = float(np.sqrt((data ** 2).mean()))
-    rms_stack = float(np.sqrt((stacked ** 2).mean()))
+    rms_before = float(np.sqrt((data**2).mean()))
+    rms_stack = float(np.sqrt((stacked**2).mean()))
     return (
         f"叠加完成: {data.shape[0]} 道 → 1 道 ({data.shape[1]} 采样)\n"
         f"输入道集 rms={rms_before:.4g}, 叠加道 rms={rms_stack:.4g}, "
@@ -139,7 +135,7 @@ def stack_traces(traces: List[List[float]]) -> str:
 
 @registry.register(category="processing")
 def diffraction_stack_migrate(
-    traces: List[List[float]],
+    traces: list[list[float]],
     dt_ms: float = 2.0,
     dx_m: float = 25.0,
     v_mig: float = 3000.0,
@@ -164,7 +160,7 @@ def diffraction_stack_migrate(
                 dx = abs(x[i] - x[i0])
                 if dx > aperture_m:
                     continue
-                tx = np.sqrt(t0 ** 2 + (dx / v_mig * 1000.0) ** 2)
+                tx = np.sqrt(t0**2 + (dx / v_mig * 1000.0) ** 2)
                 j = int(round(tx / dt_ms))
                 if 0 <= j < ns:
                     out[i0, j0] += data[i, j] / (1 + (dx / aperture_m) ** 2)

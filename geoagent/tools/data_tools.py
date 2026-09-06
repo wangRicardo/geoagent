@@ -8,10 +8,7 @@
 
 from __future__ import annotations
 
-import json
 import os
-from datetime import datetime
-from typing import Optional
 
 import numpy as np
 
@@ -50,8 +47,9 @@ def fetch_usgs_earthquakes(
         "orderby": "magnitude",
     }
     try:
-        r = requests.get("https://earthquake.usgs.gov/fdsnws/event/1/query",
-                         params=params, headers=UA, timeout=60)
+        r = requests.get(
+            "https://earthquake.usgs.gov/fdsnws/event/1/query", params=params, headers=UA, timeout=60
+        )
         r.raise_for_status()
     except Exception as exc:  # noqa: BLE001
         return f"ERROR: USGS 查询失败: {exc}"
@@ -63,7 +61,9 @@ def fetch_usgs_earthquakes(
     for row in rows:
         cols = row.split(",")
         # CSV 列: time,latitude,longitude,depth,mag,magType,nst,gap,dmin,rms,...,place
-        out.append(f"  {cols[0][:19]} M{cols[4]} @ ({cols[1]}, {cols[2]}) depth={cols[3]}km | {cols[-1][:50]}")
+        out.append(
+            f"  {cols[0][:19]} M{cols[4]} @ ({cols[1]}, {cols[2]}) depth={cols[3]}km | {cols[-1][:50]}"
+        )
     return "\n".join(out)
 
 
@@ -75,7 +75,7 @@ def fetch_iris_waveform(
     location: str = "00",
     start_time: str = "2024-01-01T00:00:00",
     duration_sec: int = 3600,
-    filename: Optional[str] = None,
+    filename: str | None = None,
 ) -> str:
     """从 IRIS FDSN 服务下载指定台站的地震波形，保存为 SAC 文件并返回统计量。
 
@@ -134,8 +134,11 @@ def fetch_iris_events(
     try:
         client = Client("USGS", user_agent=UA["User-Agent"])
         cat = client.get_events(
-            starttime=UTCDateTime(start_date), endtime=UTCDateTime(end_date),
-            minmagnitude=min_magnitude, orderby="magnitude", limit=min(limit, 50),
+            starttime=UTCDateTime(start_date),
+            endtime=UTCDateTime(end_date),
+            minmagnitude=min_magnitude,
+            orderby="magnitude",
+            limit=min(limit, 50),
         )
     except Exception as exc:  # noqa: BLE001
         return f"ERROR: IRIS 事件查询失败: {exc}"

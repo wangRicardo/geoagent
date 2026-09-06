@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pypi-dist
+          path: dist/
+
+  pypi:
+    needs: wheel
+    runs-on: ubuntu-latest
+    # 配置 PYPI_API_KEY secret 后自动发布到 PyPI；未配置时跳过
+    if: ${{ vars.PUBLISH_PYPI == 'true' }}
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pypi-dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  exe:
+    needs: wheel
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[ml,plot] pyinstaller
+      - name: Build executables
+        run: |
+          pyinstaller --onefile --name RicardoAgent --icon assets/ricardo.ico `
+            --hidden-import matplotlib --hidden-import scipy --hidden-import sklearn `
+            --clean -y ricardo_app.py
+          pyinstaller --onedir --noconsole --name RicardoAgentGUI --icon assets/ricardo.ico `
+            --add-data "assets;assets" `
+            --hidden-import matplotlib --hidden-import scipy --hidden-import sklearn `
+            --clean -y ricardo_gui_app.py
+      - name: Zip desktop build
+        run: Compress-Archive -Path "dist/RicardoAgent.exe","dist/RicardoAgentGUI" -DestinationPath "dist/RicardoAgent-windows.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: dist/RicardoAgent-windows.zip
+
+  github-release:
+    needs: [exe]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-exe
+          path: rel/
+      - uses: actions/download-artifact@v4
+        with:
+          name: pypi-dist
+          path: rel/
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: rel/*
+          generate_release_notes: true

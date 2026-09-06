@@ -10,10 +10,11 @@ import json
 import re
 import sys
 
-from . import GeoAgent, registry
+from . import GeoAgent, __version__, registry
 from .config import PROVIDERS, THINKING_LEVELS
+from .observability import log_uncaught, setup_logging
 
-BANNER = r"""
+BANNER = f"""
     ██╗██╗   ██╗███████╗
     ██║██║   ██║██╔════╝      █████╗  ██████╗ ███████╗███╗   ██╗████████╗
     ██║██║   ██║███████╗    ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
@@ -21,7 +22,7 @@ BANNER = r"""
 ╚█████╔╝╚██████╔╝███████║    ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║
  ╚════╝  ╚═════╝ ╚══════╝    ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║
                              ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝
-        地球物理 × 机器学习 · 你的个人研究 Agent · v0.7.0
+        地球物理 × 机器学习 · 你的个人研究 Agent · v{__version__}
 """
 
 SLASH_HELP = """对话内命令:
@@ -38,9 +39,7 @@ SLASH_HELP = """对话内命令:
   bench [--list]           运行 agent 自评测基准（需要在线）
   /tools                   列出工具
   /config                  配置保存位置: ~/.geoagent/config.json
-其余输入都会发给模型。"quit" 或 Ctrl+C 退出。""".format(
-    p=", ".join(PROVIDERS), t=", ".join(THINKING_LEVELS)
-)
+其余输入都会发给模型。"quit" 或 Ctrl+C 退出。""".format(p=", ".join(PROVIDERS), t=", ".join(THINKING_LEVELS))
 
 
 def _handle_slash(line: str, agent: GeoAgent) -> str | None:
@@ -60,8 +59,13 @@ def _handle_slash(line: str, agent: GeoAgent) -> str | None:
         if not arg:
             remote = cfg.fetch_models()
             if remote:
-                return f"远端可用模型({len(remote)}): " + ", ".join(remote[:30]) + \
-                       ("\n" if len(remote) > 30 else "") + f"\n内置预设: " + ", ".join(cfg.models())
+                return (
+                    f"远端可用模型({len(remote)}): "
+                    + ", ".join(remote[:30])
+                    + ("\n" if len(remote) > 30 else "")
+                    + "\n内置预设: "
+                    + ", ".join(cfg.models())
+                )
             return "可用模型(内置): " + ", ".join(cfg.models())
         out = cfg.set_model(arg)
         return out
@@ -74,7 +78,11 @@ def _handle_slash(line: str, agent: GeoAgent) -> str | None:
     if cmd == "/usage":
         return agent.usage_report()
     if cmd == "/thinking":
-        return cfg.set_thinking(arg) if arg else f"思考强度当前: {cfg.thinking}，可选: {', '.join(THINKING_LEVELS)}"
+        return (
+            cfg.set_thinking(arg)
+            if arg
+            else f"思考强度当前: {cfg.thinking}，可选: {', '.join(THINKING_LEVELS)}"
+        )
     if cmd == "/cd":
         return agent.set_workdir(arg) if arg else f"工作目录: {agent.workdir}"
     if cmd == "/clear":
@@ -87,6 +95,7 @@ def _handle_slash(line: str, agent: GeoAgent) -> str | None:
         return "\n".join(f"[{t.category}] {t.name}: {t.description[:50]}" for t in registry.list())
     if cmd == "/config":
         from .config import CONFIG_PATH
+
         return f"配置文件: {CONFIG_PATH}（提供商/模型/思考强度会自动保存）"
     return f"未知命令 {cmd}。输入 /help 查看命令列表。"
 
@@ -119,13 +128,20 @@ def _demo_reply(line: str, agent: GeoAgent) -> str:
         return _run("read_file", {"path": p}) if p else "请给出路径，例如：读文件 data.py"
     if low.startswith(("写文件", "write_file")):
         p, c = _kv(line, "路径"), _kv(line, "内容")
-        return _run("write_file", {"path": p, "content": c}) if p and c else "用法：写文件 路径=x.py 内容=print(1)"
+        return (
+            _run("write_file", {"path": p, "content": c})
+            if p and c
+            else "用法：写文件 路径=x.py 内容=print(1)"
+        )
     if low.startswith(("记笔记", "save_note")):
-        return _run("save_note", {
-            "title": _kv(line, "标题") or "未命名笔记",
-            "content": _kv(line, "内容") or "",
-            "tags": _kv(line, "标签") or "",
-        })
+        return _run(
+            "save_note",
+            {
+                "title": _kv(line, "标题") or "未命名笔记",
+                "content": _kv(line, "内容") or "",
+                "tags": _kv(line, "标签") or "",
+            },
+        )
     if low.startswith(("看笔记", "list_notes")):
         return _run("list_notes", {"tag": _kv(line, "标签") or ""})
     if low.startswith(("搜笔记", "search_notes")):
@@ -134,22 +150,25 @@ def _demo_reply(line: str, agent: GeoAgent) -> str:
     if re.search(r"ricker|子波", low):
         return _run("ricker_wavelet", {"freq_hz": _num(line, "freq_hz", "主频", default=30.0)})
     if "调谐" in low or "分辨率" in low:
-        return _run("tuning_thickness", {
-            "freq_hz": _num(line, "freq_hz", "主频", default=25.0),
-            "vp_ms": _num(line, "vp_ms", "vp", default=3000.0),
-        })
+        return _run(
+            "tuning_thickness",
+            {
+                "freq_hz": _num(line, "freq_hz", "主频", default=25.0),
+                "vp_ms": _num(line, "vp_ms", "vp", default=3000.0),
+            },
+        )
     if "时深" in low or "深度转换" in low:
         twt = re.search(r"twt\s*=\s*(\[[^\]]*\])", low)
         if not twt:
             return "请给出时间列表，例如：时深 vp=3000 twt=[1000,2000]"
-        return _run("velocity_to_depth", {
-            "vp_ms": _num(line, "vp_ms", "vp", default=3000.0),
-            "two_way_time_ms": json.loads(twt.group(1)),
-        })
-    return (
-        "（简单模式）我没听懂这句。输入 help 查看支持的指令；"
-        "或配置 API 密钥使用完整 LLM 对话。"
-    )
+        return _run(
+            "velocity_to_depth",
+            {
+                "vp_ms": _num(line, "vp_ms", "vp", default=3000.0),
+                "two_way_time_ms": json.loads(twt.group(1)),
+            },
+        )
+    return "（简单模式）我没听懂这句。输入 help 查看支持的指令；或配置 API 密钥使用完整 LLM 对话。"
 
 
 def _num(line: str, eng: str, cn: str, default: float) -> float:
@@ -163,24 +182,30 @@ def _kv(line: str, key: str) -> str:
 
 
 def main() -> None:
+    setup_logging()
+    sys.excepthook = log_uncaught
     args = [a for a in sys.argv[1:] if a not in ("--demo", "--simple")]
     if "--list" in args and "bench" in args:
         from .bench import load_scenarios
+
         for sc in load_scenarios():
             print(f"  {sc['name']:20s} 期望工具: {sc.get('expect_tools')}")
         return
     if "bench" in args:
-        from .bench import run_benchmark, load_scenarios
+        from .bench import load_scenarios, run_benchmark
+
         agent = GeoAgent(workdir=next((a for a in args if not a.startswith("-") and a != "bench"), None))
         print("运行评测（会真实调用 LLM）...")
         print(run_benchmark(agent, load_scenarios(), on_progress=print))
         return
     demo = len(args) != len(sys.argv[1:])
-    workdir = next((a for a in args if not a.startswith("-") and
-                    a not in ("tools", "run", "chat", "gui", "help")), None)
+    workdir = next(
+        (a for a in args if not a.startswith("-") and a not in ("tools", "run", "chat", "gui", "help")), None
+    )
     cmd = next((a for a in args if a in ("tools", "run", "chat", "gui")), "chat" if workdir else "tools")
     if cmd == "gui":
         from .gui import launch
+
         launch(workdir)
         return
     agent = GeoAgent(workdir=workdir)
@@ -190,7 +215,7 @@ def main() -> None:
         for t in registry.list():
             print(f"[{t.category:10s}] {t.name}: {t.description[:60]}")
     elif cmd == "run":
-        rest = args[args.index("run") + 1:]
+        rest = args[args.index("run") + 1 :]
         name = rest[0]
         kv_args: dict = {}
         if len(rest) > 1:
@@ -207,8 +232,10 @@ def main() -> None:
         print(agent.run_tool(name, kv_args))
     elif cmd == "chat":
         print(BANNER)
-        print(f"  提供商: {agent.config.provider} | 模型: {agent.config.model} | "
-              f"思考强度: {agent.config.thinking} | online={agent.online}")
+        print(
+            f"  提供商: {agent.config.provider} | 模型: {agent.config.model} | "
+            f"思考强度: {agent.config.thinking} | online={agent.online}"
+        )
         print(f"  工作目录: {agent.workdir}")
         print("  输入 /help 查看对话内命令，quit 退出。\n")
 

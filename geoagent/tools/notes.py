@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Optional
 
 from .base import registry
 
@@ -27,9 +26,7 @@ def _load() -> list:
 
 def _save(notes: list) -> None:
     NOTES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    NOTES_PATH.write_text(
-        json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    NOTES_PATH.write_text(json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 @registry.register(category="memory")
@@ -58,8 +55,7 @@ def list_notes(tag: str = "") -> str:
     if not notes:
         return "（还没有符合条件的笔记）"
     return "\n".join(
-        f"#{n['id']} [{n['time']}] ({','.join(n['tags']) or '无标签'}) {n['title']}"
-        for n in notes
+        f"#{n['id']} [{n['time']}] ({','.join(n['tags']) or '无标签'}) {n['title']}" for n in notes
     )
 
 
@@ -76,8 +72,7 @@ def read_note(note_id: int) -> str:
 def search_notes(keyword: str) -> str:
     """在笔记标题与正文里按关键词模糊检索。"""
     hits = [
-        n for n in _load()
-        if keyword.lower() in n["title"].lower() or keyword.lower() in n["content"].lower()
+        n for n in _load() if keyword.lower() in n["title"].lower() or keyword.lower() in n["content"].lower()
     ]
     if not hits:
         return f"没有包含 {keyword!r} 的笔记"

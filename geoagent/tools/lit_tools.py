@@ -17,9 +17,7 @@ from __future__ import annotations
 import json
 import os
 import re
-import urllib.parse
 from datetime import datetime
-from typing import List, Optional
 
 import numpy as np
 import requests
@@ -27,8 +25,8 @@ import requests
 from .base import registry
 
 UA = {"User-Agent": "RicardoAgent/0.6 (research agent; geophysics)"}
-LIT_DIR = ".ricardo_lit"          # 工作区内的索引目录
-CHUNK_SIZE = 1200                  # 字符
+LIT_DIR = ".ricardo_lit"  # 工作区内的索引目录
+CHUNK_SIZE = 1200  # 字符
 CHUNK_OVERLAP = 200
 ARXIV_API = "http://export.arxiv.org/api/query"
 EMBED_BATCH = 32
@@ -43,21 +41,20 @@ PROVIDER_EMBED_MODELS = {
     "deepseek": None,
     "moonshot": None,
 }
-LOCAL_EMBED_MODEL = os.environ.get(
-    "RICARDO_LOCAL_EMBED_MODEL", "paraphrase-multilingual-MiniLM-L12-v2"
-)
+LOCAL_EMBED_MODEL = os.environ.get("RICARDO_LOCAL_EMBED_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
 
 
 # ---------------------------------------------------------------------------
 # 分词与 TF-IDF（本地实现，中文按字 bigram，英文按单词）
 # ---------------------------------------------------------------------------
 
-def _tokenize(text: str) -> List[str]:
+
+def _tokenize(text: str) -> list[str]:
     tokens = re.findall(r"[a-zA-Z]{2,}|\d+\.?\d*", text.lower())
     # 中文：字 bigram（覆盖 0x4e00-0x9fff）
     for m in re.finditer(r"[\u4e00-\u9fff]+", text):
         seg = m.group()
-        tokens += [seg[i:i + 2] for i in range(len(seg) - 1)]
+        tokens += [seg[i : i + 2] for i in range(len(seg) - 1)]
     return tokens
 
 
@@ -66,10 +63,10 @@ class TfidfIndex:
 
     def __init__(self) -> None:
         self.idf: dict[str, float] = {}
-        self.doc_vecs: List[dict[str, float]] = []
+        self.doc_vecs: list[dict[str, float]] = []
         self.doc_norms: np.ndarray | None = None
 
-    def _fit_idf(self, docs_tokens: List[List[str]]) -> None:
+    def _fit_idf(self, docs_tokens: list[list[str]]) -> None:
         n = len(docs_tokens)
         df: dict[str, int] = {}
         for toks in docs_tokens:
@@ -77,20 +74,18 @@ class TfidfIndex:
                 df[w] = df.get(w, 0) + 1
         self.idf = {w: np.log((n + 1) / (c + 1)) + 1.0 for w, c in df.items()}
 
-    def _vec(self, toks: List[str]) -> dict[str, float]:
+    def _vec(self, toks: list[str]) -> dict[str, float]:
         tf: dict[str, int] = {}
         for w in toks:
             tf[w] = tf.get(w, 0) + 1
-        return {w: (1 + np.log(c)) * self.idf.get(w, np.log(2.0) + 1.0)
-                for w, c in tf.items()}
+        return {w: (1 + np.log(c)) * self.idf.get(w, np.log(2.0) + 1.0) for w, c in tf.items()}
 
-    def fit(self, docs_tokens: List[List[str]]) -> None:
+    def fit(self, docs_tokens: list[list[str]]) -> None:
         self._fit_idf(docs_tokens)
         self.doc_vecs = [self._vec(t) for t in docs_tokens]
-        self.doc_norms = np.array([np.sqrt(sum(v * v for v in d.values())) or 1.0
-                                   for d in self.doc_vecs])
+        self.doc_norms = np.array([np.sqrt(sum(v * v for v in d.values())) or 1.0 for d in self.doc_vecs])
 
-    def transform(self, toks: List[str]) -> dict[str, float]:
+    def transform(self, toks: list[str]) -> dict[str, float]:
         return self._vec(toks)
 
     @staticmethod
@@ -107,14 +102,15 @@ class TfidfIndex:
 # 嵌入后端
 # ---------------------------------------------------------------------------
 
-def _embed_provider(texts: List[str], model: Optional[str] = None) -> np.ndarray:
+
+def _embed_provider(texts: list[str], model: str | None = None) -> np.ndarray:
     """调用当前提供商的 /embeddings 接口，返回 (n, dim) 归一化向量。"""
     from ..config import AgentConfig
+
     cfg = AgentConfig()
     if not cfg.api_key:
         raise RuntimeError("未配置 API 密钥，provider 嵌入不可用")
-    model = model or os.environ.get("GEOAGENT_EMBED_MODEL") \
-        or PROVIDER_EMBED_MODELS.get(cfg.provider)
+    model = model or os.environ.get("GEOAGENT_EMBED_MODEL") or PROVIDER_EMBED_MODELS.get(cfg.provider)
     if not model:
         raise RuntimeError(
             f"提供商 {cfg.provider} 没有 embeddings 端点；"
@@ -122,27 +118,25 @@ def _embed_provider(texts: List[str], model: Optional[str] = None) -> np.ndarray
             "或 lit_reindex backend=local / tfidf"
         )
     from openai import OpenAI
+
     client = OpenAI(api_key=cfg.api_key, base_url=cfg.base_url)
-    vecs: List[List[float]] = []
+    vecs: list[list[float]] = []
     for i in range(0, len(texts), EMBED_BATCH):
-        batch = [t[:6000] for t in texts[i:i + EMBED_BATCH]]
+        batch = [t[:6000] for t in texts[i : i + EMBED_BATCH]]
         resp = client.embeddings.create(model=model, input=batch)
         vecs += [d.embedding for d in resp.data]
     arr = np.asarray(vecs, dtype=np.float32)
     return arr / (np.linalg.norm(arr, axis=1, keepdims=True) + 1e-9)
 
 
-def _embed_local(texts: List[str], model: Optional[str] = None) -> np.ndarray:
+def _embed_local(texts: list[str], model: str | None = None) -> np.ndarray:
     """本地 sentence-transformers 嵌入（首次使用会下载模型）。"""
     try:
         from sentence_transformers import SentenceTransformer
-    except ImportError:
-        raise RuntimeError(
-            "本地嵌入需要 sentence-transformers: pip install sentence-transformers"
-        )
+    except ImportError as exc:
+        raise RuntimeError("本地嵌入需要 sentence-transformers: pip install sentence-transformers") from exc
     st = SentenceTransformer(model or LOCAL_EMBED_MODEL)
-    arr = np.asarray(st.encode(texts, batch_size=EMBED_BATCH, show_progress_bar=False),
-                     dtype=np.float32)
+    arr = np.asarray(st.encode(texts, batch_size=EMBED_BATCH, show_progress_bar=False), dtype=np.float32)
     return arr / (np.linalg.norm(arr, axis=1, keepdims=True) + 1e-9)
 
 
@@ -157,6 +151,7 @@ def _get_embedder(backend: str):
 
 def _current_provider() -> str:
     from ..config import AgentConfig
+
     return AgentConfig().provider
 
 
@@ -165,7 +160,7 @@ def _active_backend(db: dict) -> str:
     return db.get("embed", {}).get("backend", "tfidf")
 
 
-def _embed_texts(db: dict, texts: List[str], backend: Optional[str] = None) -> np.ndarray:
+def _embed_texts(db: dict, texts: list[str], backend: str | None = None) -> np.ndarray:
     """按指定后端嵌入；backend=None 时沿用库中现有后端（缺省 tfidf）。"""
     backend = backend or _active_backend(db)
     if backend == "tfidf":
@@ -173,7 +168,7 @@ def _embed_texts(db: dict, texts: List[str], backend: Optional[str] = None) -> n
     return _get_embedder(backend)(texts)
 
 
-def _semantic_scores(db: dict, query: str, backend: Optional[str] = None):
+def _semantic_scores(db: dict, query: str, backend: str | None = None):
     """语义检索打分；后端不可用时返回 None（调用方回退 TF-IDF）。"""
     if "embed" not in db:
         return None
@@ -203,6 +198,7 @@ def _save_vectors(vectors: np.ndarray) -> None:
 # ---------------------------------------------------------------------------
 # 索引存取（工作区 .ricardo_lit/）
 # ---------------------------------------------------------------------------
+
 
 def _lit_dir() -> str:
     d = os.path.join(os.getcwd(), LIT_DIR)
@@ -234,11 +230,11 @@ def _build_index(db: dict) -> TfidfIndex:
 def _extract_pdf(path: str) -> str:
     try:
         from pypdf import PdfReader
-    except ImportError:
-        raise RuntimeError("需要 pypdf 库: pip install pypdf")
+    except ImportError as exc:
+        raise RuntimeError("需要 pypdf 库: pip install pypdf") from exc
     reader = PdfReader(path)
     pages = []
-    for i, page in enumerate(reader.pages):
+    for page in reader.pages:
         try:
             pages.append(page.extract_text() or "")
         except Exception:  # noqa: BLE001 - 个别页损坏时跳过
@@ -246,7 +242,7 @@ def _extract_pdf(path: str) -> str:
     return "\n".join(f"[page {i + 1}] {p}" for i, p in enumerate(pages))
 
 
-def _hard_split(text: str) -> List[str]:
+def _hard_split(text: str) -> list[str]:
     """把超长文本按句子边界切成 CHUNK_SIZE 窗口，窗口间保留 overlap。"""
     sentences = re.split(r"(?<=[.。!?？！])\s+", text)
     chunks, cur = [], ""
@@ -256,7 +252,7 @@ def _hard_split(text: str) -> List[str]:
                 chunks.append(cur)
                 cur = ""
             chunks.append(s[:CHUNK_SIZE])
-            s = s[CHUNK_SIZE - CHUNK_OVERLAP:]
+            s = s[CHUNK_SIZE - CHUNK_OVERLAP :]
         if len(cur) + len(s) + 1 > CHUNK_SIZE:
             chunks.append(cur)
             cur = cur[-CHUNK_OVERLAP:] + " " + s
@@ -267,12 +263,12 @@ def _hard_split(text: str) -> List[str]:
     return [c for c in chunks if len(c.strip()) > 50]
 
 
-def _chunk_text(text: str) -> List[str]:
+def _chunk_text(text: str) -> list[str]:
     """段落聚合分块；PDF 提取的文本常缺段落分隔，超长段落自动按句切窗。"""
     paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
     if not paras:
         return _hard_split(text)
-    chunks: List[str] = []
+    chunks: list[str] = []
     cur = ""
     for p in paras:
         if len(p) > CHUNK_SIZE:
@@ -296,23 +292,25 @@ def _chunk_text(text: str) -> List[str]:
 # 工具
 # ---------------------------------------------------------------------------
 
+
 @registry.register(category="rag")
-def lit_ingest(paths: List[str]) -> str:
+def lit_ingest(paths: list[str]) -> str:
     """把工作区内的 PDF / TXT / Markdown 文献解析入库并重建检索索引。
 
     paths 支持具体文件或目录（目录会递归收集 .pdf/.txt/.md）。
     重复文件会跳过（按路径判重）。入库后可用 lit_search / lit_ask 检索问答。
     """
     root = os.getcwd()
-    files: List[str] = []
+    files: list[str] = []
     for p in paths:
         full = os.path.abspath(os.path.join(root, p))
         if os.path.commonpath([root, full]) != root:
             return f"ERROR: 路径越出工作目录: {p}"
         if os.path.isdir(full):
             for dirpath, _, names in os.walk(full):
-                files += [os.path.join(dirpath, n) for n in names
-                          if n.lower().endswith((".pdf", ".txt", ".md"))]
+                files += [
+                    os.path.join(dirpath, n) for n in names if n.lower().endswith((".pdf", ".txt", ".md"))
+                ]
         elif os.path.isfile(full):
             files.append(full)
         else:
@@ -323,7 +321,7 @@ def lit_ingest(paths: List[str]) -> str:
     db = _load_db()
     known = {c["source"] for c in db["chunks"]}
     added, skipped = 0, 0
-    new_chunks: List[dict] = []
+    new_chunks: list[dict] = []
     for f in files:
         rel = os.path.relpath(f, root)
         if rel in known:
@@ -341,8 +339,11 @@ def lit_ingest(paths: List[str]) -> str:
             continue
         for chunk in _chunk_text(text):
             new_chunks.append({"source": rel, "text": chunk})
-        db["sources"][rel] = {"pages": text.count("[page"), "chars": len(text),
-                              "ingested": datetime.now().isoformat(timespec="seconds")}
+        db["sources"][rel] = {
+            "pages": text.count("[page"),
+            "chars": len(text),
+            "ingested": datetime.now().isoformat(timespec="seconds"),
+        }
         added += 1
     db["chunks"] += new_chunks
     # 已有语义索引时，为新块增量补向量；失败则降级为 TF-IDF 库
@@ -357,13 +358,16 @@ def lit_ingest(paths: List[str]) -> str:
             if os.path.exists(os.path.join(_lit_dir(), "embeddings.npy")):
                 os.remove(os.path.join(_lit_dir(), "embeddings.npy"))
             _save_db(db)
-            return (f"ERROR: 语义索引增量更新失败（{exc}），已回退 TF-IDF。"
-                    f"可稍后运行 lit_reindex 重建语义索引。")
+            return (
+                f"ERROR: 语义索引增量更新失败（{exc}），已回退 TF-IDF。可稍后运行 lit_reindex 重建语义索引。"
+            )
     _save_db(db)
     n = len(db["chunks"])
     backend = _active_backend(db)
-    return (f"入库完成: 新增 {added} 篇（跳过 {skipped}），文献库共 {n} 个文本块、"
-            f"{len(db['sources'])} 篇文献（检索后端: {backend}）→ {LIT_DIR}/db.json")
+    return (
+        f"入库完成: 新增 {added} 篇（跳过 {skipped}），文献库共 {n} 个文本块、"
+        f"{len(db['sources'])} 篇文献（检索后端: {backend}）→ {LIT_DIR}/db.json"
+    )
 
 
 @registry.register(category="rag")
@@ -383,8 +387,11 @@ def lit_search(query: str, k: int = 5, backend: str = "") -> str:
         try:
             vecs = _get_embedder(wanted)([c["text"] for c in db["chunks"]], None)
             if wanted == "provider":
-                model_name = os.environ.get("GEOAGENT_EMBED_MODEL") \
-                    or PROVIDER_EMBED_MODELS.get(_current_provider()) or wanted
+                model_name = (
+                    os.environ.get("GEOAGENT_EMBED_MODEL")
+                    or PROVIDER_EMBED_MODELS.get(_current_provider())
+                    or wanted
+                )
             else:
                 model_name = os.environ.get("RICARDO_LOCAL_EMBED_MODEL", LOCAL_EMBED_MODEL)
             db["embed"] = {"backend": wanted, "model": model_name}
@@ -399,7 +406,7 @@ def lit_search(query: str, k: int = 5, backend: str = "") -> str:
     if scores is None:
         used = "tfidf"
         scores = _tfidf_scores(db, query)
-    order = np.argsort(scores)[::-1][:max(1, min(k, 8))]
+    order = np.argsort(scores)[::-1][: max(1, min(k, 8))]
     out = [f"检索结果（{query!r}，后端 {used}{note}）:"]
     hit = False
     for i in order:
@@ -426,7 +433,7 @@ def lit_ask(question: str, k: int = 5) -> str:
     scores = _semantic_scores(db, question)  # 语义优先，不可用自动回退 TF-IDF
     if scores is None:
         scores = _tfidf_scores(db, question)
-    order = np.argsort(scores)[::-1][:max(1, min(k, 8))]
+    order = np.argsort(scores)[::-1][: max(1, min(k, 8))]
     ctx, refs = [], []
     for rank, i in enumerate(order, 1):
         if scores[i] <= 0:
@@ -439,6 +446,7 @@ def lit_ask(question: str, k: int = 5) -> str:
         return f"文献库中没有与 {question!r} 相关的内容。"
 
     from ..config import AgentConfig
+
     cfg = AgentConfig()
     if not cfg.api_key:
         return (
@@ -473,8 +481,9 @@ def lit_status() -> str:
     db = _load_db()
     if not db["sources"]:
         return f"文献库为空（索引目录 {LIT_DIR}/）。用 lit_ingest 或 arxiv_download 开始。"
-    lines = [f"文献 {len(db['sources'])} 篇 / 文本块 {len(db['chunks'])} 个 / "
-             f"检索后端 {_active_backend(db)}:"]
+    lines = [
+        f"文献 {len(db['sources'])} 篇 / 文本块 {len(db['chunks'])} 个 / 检索后端 {_active_backend(db)}:"
+    ]
     for src, meta in db["sources"].items():
         lines.append(f"  {src} — {meta['chars']:,} 字符, {meta['pages']} 页, {meta['ingested']}")
     return "\n".join(lines)
@@ -506,33 +515,47 @@ def lit_reindex(backend: str = "provider", model: str = "") -> str:
     except RuntimeError as exc:
         return f"ERROR: {exc}"
     if backend == "provider":
-        default_model = model or os.environ.get("GEOAGENT_EMBED_MODEL") \
-            or PROVIDER_EMBED_MODELS.get(_current_provider())
+        default_model = (
+            model or os.environ.get("GEOAGENT_EMBED_MODEL") or PROVIDER_EMBED_MODELS.get(_current_provider())
+        )
     else:
         default_model = model or LOCAL_EMBED_MODEL
     db["embed"] = {"backend": backend, "model": default_model}
     _save_vectors(vecs)
     _save_db(db)
-    return (f"语义索引重建完成: 后端 {backend}（{default_model}），"
-            f"{vecs.shape[0]} 个文本块 x {vecs.shape[1]} 维。现在同义改述也能命中。")
+    return (
+        f"语义索引重建完成: 后端 {backend}（{default_model}），"
+        f"{vecs.shape[0]} 个文本块 x {vecs.shape[1]} 维。现在同义改述也能命中。"
+    )
 
 
 # ---------------------------------------------------------------------------
 # arXiv 检索与下载
 # ---------------------------------------------------------------------------
 
-def _parse_arxiv_feed(xml: str) -> List[dict]:
+
+def _parse_arxiv_feed(xml: str) -> list[dict]:
     entries = []
     for m in re.finditer(r"<entry>(.*?)</entry>", xml, re.S):
-        e = m.group(1)
-        get = lambda tag: (re.search(rf"<{tag}>(.*?)</{tag}>", e, re.S).group(1).strip()
-                           if re.search(rf"<{tag}>(.*?)</{tag}>", e, re.S) else "")
+        entry = m.group(1)
+
+        def get(tag: str, _e: str = entry) -> str:
+            hit = re.search(rf"<{tag}>(.*?)</{tag}>", _e, re.S)
+            return hit.group(1).strip() if hit else ""
+
         title = re.sub(r"\s+", " ", get("title"))
         summary = re.sub(r"\s+", " ", get("summary"))
-        authors = re.findall(r"<name>(.*?)</name>", e)
+        authors = re.findall(r"<name>(.*?)</name>", entry)
         link = get("id")
-        entries.append({"id": link.split("/abs/")[-1], "title": title,
-                        "authors": authors, "summary": summary, "url": link})
+        entries.append(
+            {
+                "id": link.split("/abs/")[-1],
+                "title": title,
+                "authors": authors,
+                "summary": summary,
+                "url": link,
+            }
+        )
     return entries
 
 
@@ -582,14 +605,14 @@ def arxiv_download(arxiv_id: str, ingest: bool = True) -> str:
         r = requests.get(url, headers=UA, timeout=120)
         r.raise_for_status()
         if not r.content.startswith(b"%PDF"):
-            return f"ERROR: 返回内容不是 PDF（可能被限流），稍后重试"
+            return "ERROR: 返回内容不是 PDF（可能被限流），稍后重试"
     except Exception as exc:  # noqa: BLE001
         return f"ERROR: 下载失败: {exc}"
     fname = f"arxiv_{arxiv_id.replace('/', '_')}.pdf"
     root = os.getcwd()
     full = os.path.abspath(os.path.join(root, fname))
     if os.path.commonpath([root, full]) != root:
-        return f"ERROR: 路径越出工作目录"
+        return "ERROR: 路径越出工作目录"
     with open(full, "wb") as f:
         f.write(r.content)
     out = f"已下载: {fname}（{len(r.content):,} 字节）"
@@ -606,9 +629,12 @@ def lit_ingest_crossref(query: str, rows: int = 5, save_dir: str = "lit_sources"
     标题/作者/年份/DOI 作为背景卡片。入库后可用 lit_search/lit_ask 检索。
     """
     try:
-        r = requests.get("https://api.crossref.org/works",
-                         params={"query.bibliographic": query, "rows": rows},
-                         headers=UA, timeout=30)
+        r = requests.get(
+            "https://api.crossref.org/works",
+            params={"query.bibliographic": query, "rows": rows},
+            headers=UA,
+            timeout=30,
+        )
         items = r.json()["message"]["items"] if r.ok else []
     except Exception as exc:  # noqa: BLE001
         return f"ERROR: Crossref 查询失败: {exc}"
@@ -626,9 +652,11 @@ def lit_ingest_crossref(query: str, rows: int = 5, save_dir: str = "lit_sources"
         year = (meta.get("published", {}).get("date-parts") or [["n.d."]])[0][0]
         authors = ", ".join(a.get("family", "") for a in meta.get("author", [])[:6])
         abstract = re.sub(r"<[^>]+>", " ", meta.get("abstract") or "")
-        content = (f"# {title}\n\n- 作者: {authors}\n- 年份: {year}\n"
-                   f"- 期刊: {(meta.get('container-title') or ['?'])[0]}\n"
-                   f"- DOI: {meta.get('DOI', '')}\n\n## 摘要\n\n{abstract or '（Crossref 未提供摘要）'}\n")
+        content = (
+            f"# {title}\n\n- 作者: {authors}\n- 年份: {year}\n"
+            f"- 期刊: {(meta.get('container-title') or ['?'])[0]}\n"
+            f"- DOI: {meta.get('DOI', '')}\n\n## 摘要\n\n{abstract or '（Crossref 未提供摘要）'}\n"
+        )
         fname = os.path.join(save_dir, f"{i:02d}_{safe}.md")
         with open(os.path.join(root, fname), "w", encoding="utf-8") as f:
             f.write(content)
@@ -650,7 +678,7 @@ def lit_compare(question: str, k_per_source: int = 3) -> str:
     if scores is None:
         scores = _tfidf_scores(db, question)
     order = np.argsort(scores)[::-1]
-    by_source: dict[str, List[str]] = {}
+    by_source: dict[str, list[str]] = {}
     for i in order:
         if scores[i] <= 0:
             break
@@ -661,13 +689,14 @@ def lit_compare(question: str, k_per_source: int = 3) -> str:
         if sum(len(v) for v in by_source.values()) >= 6 * k_per_source:
             break
     if len(by_source) < 2:
-        return (f"联合对比至少需要 2 篇文献，当前只检索到 {len(by_source)} 篇相关来源。"
-                "请导入更多相关文献。")
+        return f"联合对比至少需要 2 篇文献，当前只检索到 {len(by_source)} 篇相关来源。请导入更多相关文献。"
     from ..config import AgentConfig
+
     cfg = AgentConfig()
     if not cfg.api_key:
-        return ("ERROR: lit_compare 的综合分析需要 API 密钥。\n"
-                + "\n".join(f"[{s}] 相关段落 {len(v)} 个" for s, v in by_source.items()))
+        return "ERROR: lit_compare 的综合分析需要 API 密钥。\n" + "\n".join(
+            f"[{s}] 相关段落 {len(v)} 个" for s, v in by_source.items()
+        )
     try:
         from openai import OpenAI
     except ImportError:

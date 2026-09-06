@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-from typing import List
-
 import numpy as np
 
 from .base import registry
@@ -22,8 +20,8 @@ def ricker_wavelet(
     if freq_hz <= 0:
         return "ERROR: freq_hz 必须为正"
     t = np.arange(-length_ms / 2, length_ms / 2 + dt_ms / 2, dt_ms) / 1000.0
-    a = np.pi ** 2 * freq_hz ** 2
-    w = (1 - 2 * a * t ** 2) * np.exp(-a * t ** 2)
+    a = np.pi**2 * freq_hz**2
+    w = (1 - 2 * a * t**2) * np.exp(-a * t**2)
     peak_t = t[int(np.argmax(np.abs(w)))] * 1000
     return (
         f"Ricker 子波: 主频 {freq_hz} Hz, dt={dt_ms} ms, {t.size} 个采样\n"
@@ -34,7 +32,7 @@ def ricker_wavelet(
 
 @registry.register(category="geophysics")
 def synthetic_trace(
-    impedance: List[float],
+    impedance: list[float],
     wavelet_freq_hz: float = 30.0,
     dt_ms: float = 1.0,
 ) -> str:
@@ -49,8 +47,8 @@ def synthetic_trace(
     rc[1:] = (z[1:] - z[:-1]) / (z[1:] + z[:-1])
     n = int(100.0 / dt_ms)
     t = np.arange(-n / 2, n / 2) / 1000.0
-    a = np.pi ** 2 * wavelet_freq_hz ** 2
-    w = (1 - 2 * a * t ** 2) * np.exp(-a * t ** 2)
+    a = np.pi**2 * wavelet_freq_hz**2
+    w = (1 - 2 * a * t**2) * np.exp(-a * t**2)
     trace = np.convolve(rc, w, mode="same")
     return (
         f"合成地震道: {z.size} 层, 主频 {wavelet_freq_hz} Hz\n"

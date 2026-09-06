@@ -10,12 +10,11 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
 
 CONFIG_PATH = Path.home() / ".geoagent" / "config.json"
 
 # 内置提供商预设：base_url 与 API key 的环境变量名。
-PROVIDERS: Dict[str, Dict[str, str]] = {
+PROVIDERS: dict[str, dict[str, str]] = {
     "openai": {
         "base_url": "https://api.openai.com/v1",
         "key_env": "OPENAI_API_KEY",
@@ -65,7 +64,7 @@ class AgentConfig:
         self.provider: str = data.get("provider", "openai")
         self.model: str = data.get("model", self._preset()["default_model"])
         self.thinking: str = data.get("thinking", "off")
-        self._custom_models: List[str] = data.get("custom_models", [])
+        self._custom_models: list[str] = data.get("custom_models", [])
 
     # -- 持久化 ---------------------------------------------------------------
 
@@ -95,7 +94,7 @@ class AgentConfig:
 
     # -- 提供商 ----------------------------------------------------------------
 
-    def _preset(self) -> Dict[str, str]:
+    def _preset(self) -> dict[str, str]:
         return PROVIDERS.get(self.provider, PROVIDERS["openai"])
 
     def set_provider(self, name: str) -> str:
@@ -113,17 +112,15 @@ class AgentConfig:
         return os.environ.get("GEOAGENT_BASE_URL", self._preset()["base_url"])
 
     @property
-    def api_key(self) -> Optional[str]:
+    def api_key(self) -> str | None:
         key_env = self._preset()["key_env"]
         return (
-            os.environ.get("RICARDO_API_KEY")
-            or os.environ.get(key_env)
-            or os.environ.get("GEOAGENT_API_KEY")
+            os.environ.get("RICARDO_API_KEY") or os.environ.get(key_env) or os.environ.get("GEOAGENT_API_KEY")
         )
 
     # -- 模型 ------------------------------------------------------------------
 
-    def models(self) -> List[str]:
+    def models(self) -> list[str]:
         return self._preset()["models"] + self._custom_models
 
     def set_model(self, name: str) -> str:
@@ -142,9 +139,10 @@ class AgentConfig:
         self.save()
         return f"思考强度已设为 {level}"
 
-    def fetch_models(self) -> Optional[List[str]]:
+    def fetch_models(self) -> list[str] | None:
         """从提供商的 /models 端点拉取真实模型列表；失败返回 None（调用方回退硬编码）。"""
         import requests
+
         if not self.api_key:
             return None
         try:

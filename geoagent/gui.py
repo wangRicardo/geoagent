@@ -20,16 +20,17 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from . import GeoAgent, registry
+from . import GeoAgent
 from .config import PROVIDERS, THINKING_LEVELS
+from .observability import gui_crash_hook, setup_logging
 
 # -- 配色（与官网一致的深色科技风） -------------------------------------------
-BG = "#0a0e1a"          # 主背景
-SIDEBAR = "#0d1424"     # 侧边栏
-CARD = "#141c2e"        # 卡片/输入框
-CARD_HI = "#1a2540"     # 卡片悬停
+BG = "#0a0e1a"  # 主背景
+SIDEBAR = "#0d1424"  # 侧边栏
+CARD = "#141c2e"  # 卡片/输入框
+CARD_HI = "#1a2540"  # 卡片悬停
 BUBBLE_USER = "#155e75"  # 用户气泡（青色暗调）
-BUBBLE_AI = "#161f33"   # 助手气泡
+BUBBLE_AI = "#161f33"  # 助手气泡
 BORDER = "#232f4b"
 TEXT = "#e8ecf4"
 MUTED = "#8b99af"
@@ -58,6 +59,9 @@ def _asset(name: str) -> str | None:
 class ChatWindow:
     def __init__(self, workdir: str | None = None) -> None:
         self.agent = GeoAgent(workdir=workdir)
+        self._log_path = setup_logging()
+        sys.excepthook = gui_crash_hook
+        self.root.report_callback_exception = lambda et, ev, tb: gui_crash_hook(et, ev, tb)
         self.root = tk.Tk()
         self.root.title("Ricardo Agent")
         self.root.geometry("1180x760")
@@ -77,7 +81,9 @@ class ChatWindow:
         self._sys("◈ Ricardo Agent — 地球物理 × 机器学习个人研究助手")
         self._sys(f"工作区: {self.agent.workdir} ｜ 输入 /help 查看命令")
         if not self.agent.online:
-            self._sys("未检测到 API 密钥（离线简单模式）：设置 DEEPSEEK_API_KEY 等环境变量后重启即可完整对话。")
+            self._sys(
+                "未检测到 API 密钥（离线简单模式）：设置 DEEPSEEK_API_KEY 等环境变量后重启即可完整对话。"
+            )
         self._refresh_sessions()
 
     # ------------------------------------------------------------------ UI
@@ -92,14 +98,15 @@ class ChatWindow:
         side.grid_propagate(False)
         side.columnconfigure(0, weight=1)
 
-        tk.Label(side, text="◈ Ricardo", font=FONT_LOGO, bg=SIDEBAR,
-                 fg=ACCENT).pack(anchor="w", padx=18, pady=(18, 0))
-        tk.Label(side, text="Agent", font=FONT_LOGO, bg=SIDEBAR,
-                 fg=TEXT).pack(anchor="w", padx=18)
+        tk.Label(side, text="◈ Ricardo", font=FONT_LOGO, bg=SIDEBAR, fg=ACCENT).pack(
+            anchor="w", padx=18, pady=(18, 0)
+        )
+        tk.Label(side, text="Agent", font=FONT_LOGO, bg=SIDEBAR, fg=TEXT).pack(anchor="w", padx=18)
 
         def side_btn(text, cmd):
-            b = tk.Label(side, text=text, font=FONT, bg=SIDEBAR, fg=TEXT,
-                         cursor="hand2", padx=18, pady=8, anchor="w")
+            b = tk.Label(
+                side, text=text, font=FONT, bg=SIDEBAR, fg=TEXT, cursor="hand2", padx=18, pady=8, anchor="w"
+            )
             b.bind("<Button-1>", lambda e: cmd())
             b.bind("<Enter>", lambda e: b.configure(bg=CARD))
             b.bind("<Leave>", lambda e: b.configure(bg=SIDEBAR))
@@ -112,8 +119,9 @@ class ChatWindow:
         side_btn("💾 保存会话", lambda: self._slash(f"/save {self._session_name()}"))
         side_btn("🚀 运行评测 bench", self._run_bench)
 
-        tk.Label(side, text="会话", font=FONT_S, bg=SIDEBAR, fg=MUTED,
-                 anchor="w").pack(fill="x", padx=18, pady=(14, 2))
+        tk.Label(side, text="会话", font=FONT_S, bg=SIDEBAR, fg=MUTED, anchor="w").pack(
+            fill="x", padx=18, pady=(14, 2)
+        )
         self.sess_box = tk.Frame(side, bg=SIDEBAR)
         self.sess_box.pack(fill="x")
 
@@ -122,8 +130,9 @@ class ChatWindow:
         foot.pack(side="bottom", fill="x", padx=14, pady=12)
         self.lbl_dot = tk.Label(foot, text="", font=FONT_S, bg=SIDEBAR, fg=GREEN, anchor="w")
         self.lbl_dot.pack(fill="x")
-        self.lbl_prov = tk.Label(foot, text="", font=FONT_XS, bg=SIDEBAR, fg=MUTED,
-                                 anchor="w", justify="left", wraplength=190)
+        self.lbl_prov = tk.Label(
+            foot, text="", font=FONT_XS, bg=SIDEBAR, fg=MUTED, anchor="w", justify="left", wraplength=190
+        )
         self.lbl_prov.pack(fill="x")
 
         # ---------- 右侧主区 ----------
@@ -135,28 +144,32 @@ class ChatWindow:
         # 顶栏
         top = tk.Frame(main, bg=BG)
         top.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 4))
-        self.lbl_dir = tk.Label(top, text="📂 " + self.agent.workdir, font=FONT_S,
-                                bg=CARD, fg=MUTED, padx=10, pady=6, cursor="hand2")
+        self.lbl_dir = tk.Label(
+            top,
+            text="📂 " + self.agent.workdir,
+            font=FONT_S,
+            bg=CARD,
+            fg=MUTED,
+            padx=10,
+            pady=6,
+            cursor="hand2",
+        )
         self.lbl_dir.pack(side="left")
         self.lbl_dir.bind("<Button-1>", lambda e: self._pick_workdir())
 
         def combo(label, width, values, get, set_cmd):
             tk.Label(top, text=label, font=FONT_XS, bg=BG, fg=MUTED).pack(side="left", padx=(14, 2))
-            c = ttk.Combobox(top, width=width, state="readonly", values=values,
-                             font=FONT_XS)
+            c = ttk.Combobox(top, width=width, state="readonly", values=values, font=FONT_XS)
             c.set(get())
             c.pack(side="left")
             return c
 
-        self.cmb_provider = combo("提供商", 9, list(PROVIDERS),
-                                  lambda: self.agent.config.provider, None)
+        self.cmb_provider = combo("提供商", 9, list(PROVIDERS), lambda: self.agent.config.provider, None)
         self.cmb_provider.bind("<<ComboboxSelected>>", lambda e: self._on_provider_change())
-        self.cmb_model = combo("模型", 20, self.agent.config.models(),
-                               lambda: self.agent.config.model, None)
+        self.cmb_model = combo("模型", 20, self.agent.config.models(), lambda: self.agent.config.model, None)
         self.cmb_model.bind("<<ComboboxSelected>>", lambda e: self._on_model_change())
         self.cmb_model.bind("<Return>", lambda e: self._on_model_change())
-        self.cmb_think = combo("思考", 7, THINKING_LEVELS,
-                               lambda: self.agent.config.thinking, None)
+        self.cmb_think = combo("思考", 7, THINKING_LEVELS, lambda: self.agent.config.thinking, None)
         self.cmb_think.bind("<<ComboboxSelected>>", lambda e: self._on_thinking_change())
 
         # 聊天区（可滚动画布 + 消息气泡容器）
@@ -180,20 +193,38 @@ class ChatWindow:
             self.canvas.bind_all(seq, self._on_wheel)
 
         # 输入区
-        comp = tk.Frame(main, bg=CARD, highlightbackground=BORDER,
-                        highlightthickness=1)
+        comp = tk.Frame(main, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
         comp.grid(row=2, column=0, sticky="ew", padx=16, pady=(6, 14))
-        self.input = tk.Text(comp, height=3, wrap="word", bd=0, bg=CARD, fg=TEXT,
-                             insertbackground=ACCENT, font=FONT, padx=14, pady=10)
+        self.input = tk.Text(
+            comp,
+            height=3,
+            wrap="word",
+            bd=0,
+            bg=CARD,
+            fg=TEXT,
+            insertbackground=ACCENT,
+            font=FONT,
+            padx=14,
+            pady=10,
+        )
         self.input.pack(fill="both", expand=True, padx=(4, 0), pady=(4, 0))
         self.input.bind("<Return>", self._on_enter)
         self.input.bind("<Shift-Return>", lambda e: None)
         bar = tk.Frame(comp, bg=CARD)
         bar.pack(fill="x", padx=10, pady=(0, 6))
-        tk.Label(bar, text="Enter 发送 · Shift+Enter 换行 · /help 查看命令",
-                 font=FONT_XS, bg=CARD, fg=MUTED).pack(side="left")
-        self.btn_send = tk.Label(bar, text="发送 ⏎", font=("Microsoft YaHei UI", 10, "bold"),
-                                 bg=ACCENT, fg="#0a0e1a", padx=18, pady=6, cursor="hand2")
+        tk.Label(
+            bar, text="Enter 发送 · Shift+Enter 换行 · /help 查看命令", font=FONT_XS, bg=CARD, fg=MUTED
+        ).pack(side="left")
+        self.btn_send = tk.Label(
+            bar,
+            text="发送 ⏎",
+            font=("Microsoft YaHei UI", 10, "bold"),
+            bg=ACCENT,
+            fg="#0a0e1a",
+            padx=18,
+            pady=6,
+            cursor="hand2",
+        )
         self.btn_send.pack(side="right")
         self.btn_send.bind("<Button-1>", lambda e: self._send())
         self.input.focus_set()
@@ -207,8 +238,9 @@ class ChatWindow:
     def _on_wheel(self, e) -> None:
         self.canvas.yview_scroll(int(-e.delta / 120), "units")
 
-    def _bubble(self, text: str, side: str, tag_bg: str, tag_fg: str,
-                font=FONT, max_ratio: float = 0.78) -> None:
+    def _bubble(
+        self, text: str, side: str, tag_bg: str, tag_fg: str, font=FONT, max_ratio: float = 0.78
+    ) -> None:
         """在聊天区末尾追加一条消息气泡。"""
         row = tk.Frame(self.msgs, bg=BG)
         row.pack(fill="x", pady=4, before=self._tail)
@@ -216,8 +248,9 @@ class ChatWindow:
         inner = tk.Frame(row, bg=tag_bg, highlightbackground=BORDER, highlightthickness=1)
         inner.pack(anchor=anchor, padx=(80 if anchor == "e" else 8, 8 if anchor == "e" else 80))
         maxw = max(360, int(self.root.winfo_width() * max_ratio) - 60)
-        lbl = tk.Label(inner, text=text, font=font, bg=tag_bg, fg=tag_fg,
-                       wraplength=maxw, justify="left", anchor="w")
+        lbl = tk.Label(
+            inner, text=text, font=font, bg=tag_bg, fg=tag_fg, wraplength=maxw, justify="left", anchor="w"
+        )
         lbl.pack(padx=14, pady=10)
         self.canvas.update_idletasks()
         self.canvas.yview_moveto(1.0)
@@ -234,8 +267,7 @@ class ChatWindow:
     def _sys(self, text: str) -> None:
         row = tk.Frame(self.msgs, bg=BG)
         row.pack(fill="x", pady=2, before=self._tail)
-        tk.Label(row, text="— " + text + " —", font=FONT_XS, bg=BG,
-                 fg=MUTED).pack()
+        tk.Label(row, text="— " + text + " —", font=FONT_XS, bg=BG, fg=MUTED).pack()
         self.canvas.yview_moveto(1.0)
 
     def _err(self, text: str) -> None:
@@ -246,8 +278,7 @@ class ChatWindow:
     def _refresh_status(self) -> None:
         c = self.agent.config
         ok = bool(c.api_key)
-        self.lbl_dot.configure(text="● 在线" if ok else "○ 离线（简单模式）",
-                               fg=GREEN if ok else MUTED)
+        self.lbl_dot.configure(text="● 在线" if ok else "○ 离线（简单模式）", fg=GREEN if ok else MUTED)
         self.lbl_prov.configure(text=f"{c.provider} · {c.model}\n思考: {c.thinking}")
         self.lbl_dir.configure(text="📂 " + self.agent.workdir)
 
@@ -256,15 +287,24 @@ class ChatWindow:
             w.destroy()
         names = [s for s in self.agent.list_sessions().split(", ") if s and "没有" not in s]
         for n in names[:8]:
-            lbl = tk.Label(self.sess_box, text="· " + n, font=FONT_S, bg=SIDEBAR,
-                           fg=MUTED, anchor="w", padx=18, cursor="hand2")
+            lbl = tk.Label(
+                self.sess_box,
+                text="· " + n,
+                font=FONT_S,
+                bg=SIDEBAR,
+                fg=MUTED,
+                anchor="w",
+                padx=18,
+                cursor="hand2",
+            )
             lbl.pack(fill="x")
             lbl.bind("<Button-1>", lambda e, n=n: self._slash(f"/load {n}"))
-            lbl.bind("<Enter>", lambda e, l=lbl: l.configure(fg=ACCENT))
-            lbl.bind("<Leave>", lambda e, l=lbl: l.configure(fg=MUTED))
+            lbl.bind("<Enter>", lambda e, lab=lbl: lab.configure(fg=ACCENT))
+            lbl.bind("<Leave>", lambda e, lab=lbl: lab.configure(fg=MUTED))
 
     def _session_name(self) -> str:
         from datetime import datetime
+
         return "chat_" + datetime.now().strftime("%m%d_%H%M")
 
     def _on_provider_change(self) -> None:
@@ -273,10 +313,12 @@ class ChatWindow:
         self.cmb_model.set(self.agent.config.model)
         self._sys(msg)
         self._refresh_status()
+
         def _fetch():
             remote = self.agent.config.fetch_models()
             if remote:
                 self.root.after(0, lambda: self.cmb_model.configure(values=remote[:50]))
+
         threading.Thread(target=_fetch, daemon=True).start()
 
     def _on_model_change(self) -> None:
@@ -308,9 +350,13 @@ class ChatWindow:
 
     def _bench_worker(self) -> None:
         from .bench import load_scenarios, run_benchmark
+
         try:
-            report = run_benchmark(self.agent, load_scenarios(),
-                                   on_progress=lambda m: self._queue.put(("ev", {"type": "tool_end", "result": m})))
+            report = run_benchmark(
+                self.agent,
+                load_scenarios(),
+                on_progress=lambda m: self._queue.put(("ev", {"type": "tool_end", "result": m})),
+            )
             self._queue.put(("raw", report))
         except Exception as exc:  # noqa: BLE001
             self._queue.put(("error", f"ERROR: {exc}"))
@@ -320,6 +366,7 @@ class ChatWindow:
     def _slash(self, text: str) -> None:
         self._user(text)
         from .cli import _handle_slash
+
         out = _handle_slash(text, self.agent)
         if out:
             self._bubble(out, "ai", BUBBLE_AI, MUTED, font=FONT_S)
@@ -343,6 +390,7 @@ class ChatWindow:
             return
         if not self.agent.online:
             from .cli import _demo_reply
+
             self._ai("（离线简单模式）\n" + _demo_reply(text, self.agent))
             return
         self.btn_send.configure(state="disabled", bg="#0e7490")
@@ -354,6 +402,7 @@ class ChatWindow:
     def _worker(self, text: str) -> None:
         def on_event(ev: dict) -> None:
             self._queue.put(("ev", ev))
+
         try:
             self.agent.chat(text, on_event=on_event)
             self._queue.put(("done", self.agent.usage_report()))
@@ -363,11 +412,18 @@ class ChatWindow:
     def _handle_event(self, ev: dict) -> None:
         if ev["type"] == "delta":
             if not self._live_open:
-                self._live_text = tk.Text(self._tail, wrap="word", bd=0,
-                                          bg=BUBBLE_AI, fg=TEXT, font=FONT,
-                                          padx=14, pady=10, height=1)
-                inner = tk.Frame(self._tail, bg=BUBBLE_AI,
-                                 highlightbackground=BORDER, highlightthickness=1)
+                self._live_text = tk.Text(
+                    self._tail,
+                    wrap="word",
+                    bd=0,
+                    bg=BUBBLE_AI,
+                    fg=TEXT,
+                    font=FONT,
+                    padx=14,
+                    pady=10,
+                    height=1,
+                )
+                inner = tk.Frame(self._tail, bg=BUBBLE_AI, highlightbackground=BORDER, highlightthickness=1)
                 inner.pack(anchor="w", padx=(8, 80), pady=4)
                 self._live_text.pack(in_=inner, padx=1, pady=1)
                 self._live_text.bind("<Key>", lambda e: "break")
@@ -378,6 +434,7 @@ class ChatWindow:
             self.canvas.yview_moveto(1.0)
         elif ev["type"] == "tool_start":
             import json as _json
+
             self._live_open = False
             args_s = _json.dumps(ev["args"], ensure_ascii=False)[:110]
             self._tool(f"{ev['name']}({args_s})")
@@ -386,11 +443,11 @@ class ChatWindow:
             self._tool("↳ " + (r[:150] + ("…" if len(r) > 150 else "")))
 
     def _tool(self, text: str) -> None:
-        inner = tk.Frame(self._tail, bg="#101826",
-                         highlightbackground=BORDER, highlightthickness=1)
+        inner = tk.Frame(self._tail, bg="#101826", highlightbackground=BORDER, highlightthickness=1)
         inner.pack(anchor="w", padx=(8, 80), pady=1)
-        tk.Label(inner, text="🔧 " + text, font=FONT_MONO, bg="#101826",
-                 fg=YELLOW, wraplength=760, justify="left").pack(padx=12, pady=6)
+        tk.Label(
+            inner, text="🔧 " + text, font=FONT_MONO, bg="#101826", fg=YELLOW, wraplength=760, justify="left"
+        ).pack(padx=12, pady=6)
         self.canvas.yview_moveto(1.0)
 
     def _flush_tail(self) -> None:
@@ -437,4 +494,4 @@ def launch(workdir: str | None = None) -> None:
     try:
         ChatWindow(workdir).run()
     except tk.TclError as exc:
-        raise SystemExit(f"无法启动图形界面（无显示环境?）: {exc}")
+        raise SystemExit(f"无法启动图形界面（无显示环境?）: {exc}") from exc

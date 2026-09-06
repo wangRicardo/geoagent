@@ -127,7 +127,7 @@ def latex_compile(filename: str, engine: str = "xelatex", passes: int = 2, timeo
         cmd = [exe, "-interaction=nonstopmode", "-halt-on-error", filename]
 
     log_tail = ""
-    for i in range(1 if engine in ("latexmk", "tectonic") else max(1, passes)):
+    for _ in range(1 if engine in ("latexmk", "tectonic") else max(1, passes)):
         code, log_tail = _run(cmd, cwd=root, timeout=timeout_sec)
         if code != 0:
             break
@@ -136,11 +136,7 @@ def latex_compile(filename: str, engine: str = "xelatex", passes: int = 2, timeo
     if code == 0 and os.path.isfile(os.path.join(root, pdf)):
         size = os.path.getsize(os.path.join(root, pdf))
         return f"编译成功: {pdf}（{size:,} 字节, 引擎 {engine}, {passes} 遍）"
-    errors = [
-        ln for ln in log_tail.splitlines()
-        if ln.startswith("!") or "Error" in ln or "错误" in ln
-    ][:8]
-    return (
-        f"ERROR: 编译失败（引擎 {engine}）。日志关键行:\n" +
-        ("\n".join(errors) if errors else log_tail[-800:])
+    errors = [ln for ln in log_tail.splitlines() if ln.startswith("!") or "Error" in ln or "错误" in ln][:8]
+    return f"ERROR: 编译失败（引擎 {engine}）。日志关键行:\n" + (
+        "\n".join(errors) if errors else log_tail[-800:]
     )

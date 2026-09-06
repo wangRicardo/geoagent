@@ -28,9 +28,7 @@ def _bibkey(meta: dict) -> str:
 
 def _to_bibtex(meta: dict) -> str:
     key = _bibkey(meta)
-    authors = " and ".join(
-        f"{a.get('family', '')}, {a.get('given', '')}" for a in meta.get("author", [])[:8]
-    )
+    authors = " and ".join(f"{a.get('family', '')}, {a.get('given', '')}" for a in meta.get("author", [])[:8])
     year = (meta.get("published", {}).get("date-parts") or [["0000"]])[0][0]
     lines = [
         f"@article{{{key},",
@@ -63,8 +61,7 @@ def citation_lookup(query: str, rows: int = 5, save_bibtex: str = "") -> str:
             r = requests.get(f"{API}/{urllib.parse.quote(query.strip())}", headers=UA, timeout=30)
             items = [r.json()["message"]] if r.ok else []
         else:
-            r = requests.get(API, params={"query.bibliographic": query, "rows": rows},
-                             headers=UA, timeout=30)
+            r = requests.get(API, params={"query.bibliographic": query, "rows": rows}, headers=UA, timeout=30)
             items = r.json()["message"]["items"] if r.ok else []
         r.raise_for_status()
     except Exception as exc:  # noqa: BLE001
@@ -74,9 +71,10 @@ def citation_lookup(query: str, rows: int = 5, save_bibtex: str = "") -> str:
 
     blocks, bibs = [], []
     for i, meta in enumerate(items, 1):
-        authors = ", ".join(
-            f"{a.get('family', '')} {a.get('given', '')[:1]}." for a in meta.get("author", [])[:4]
-        ) or "Unknown"
+        authors = (
+            ", ".join(f"{a.get('family', '')} {a.get('given', '')[:1]}." for a in meta.get("author", [])[:4])
+            or "Unknown"
+        )
         year = (meta.get("published", {}).get("date-parts") or [[""]])[0][0]
         journal = (meta.get("container-title") or ["?"])[0]
         cited = meta.get("is-referenced-by-count", 0)

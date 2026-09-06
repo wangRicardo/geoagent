@@ -7,7 +7,6 @@ SEG-Y / LAS 相关工具依赖 segyio / lasio，未安装时调用会返回提�
 from __future__ import annotations
 
 import os
-from typing import List
 
 import numpy as np
 
@@ -16,14 +15,13 @@ from .base import registry
 
 def _missing(lib: str, pip_name: str = "") -> str:
     pip_name = pip_name or lib
-    return (
-        f"ERROR: 需要 {lib} 库。请先安装: pip install {pip_name}"
-    )
+    return f"ERROR: 需要 {lib} 库。请先安装: pip install {pip_name}"
 
 
 # ---------------------------------------------------------------------------
 # SEG-Y 地震数据
 # ---------------------------------------------------------------------------
+
 
 @registry.register(category="geophysics")
 def segy_info(path: str) -> str:
@@ -57,14 +55,14 @@ def segy_trace_amplitude(path: str, trace_index: int) -> str:
     return (
         f"道 {trace_index}: n={amp.size}, "
         f"min={amp.min():.4g}, max={amp.max():.4g}, "
-        f"mean={amp.mean():.4g}, rms={np.sqrt(np.mean(amp ** 2)):.4g}\n"
+        f"mean={amp.mean():.4g}, rms={np.sqrt(np.mean(amp**2)):.4g}\n"
         f"前50采样: {np.round(amp[:50], 4).tolist()}"
     )
 
 
 @registry.register(category="geophysics")
 def segy_write(
-    traces: List[List[float]],
+    traces: list[list[float]],
     dt_ms: float = 1.0,
     filename: str = "output.sgy",
 ) -> str:
@@ -132,6 +130,7 @@ def segy_extract_window(path: str, trace_index: int, t_start_ms: float, t_end_ms
 # LAS 测井数据
 # ---------------------------------------------------------------------------
 
+
 @registry.register(category="geophysics")
 def las_curves(path: str) -> str:
     """列出 LAS 测井文件中所有曲线名、单位与深度范围。"""
@@ -178,8 +177,9 @@ def las_read_curve(path: str, curve: str, max_points: int = 200) -> str:
 # 通用信号处理（地震道 / 时序都适用）
 # ---------------------------------------------------------------------------
 
+
 @registry.register(category="geophysics")
-def signal_spectrum(data: List[float], dt_ms: float = 1.0) -> str:
+def signal_spectrum(data: list[float], dt_ms: float = 1.0) -> str:
     """计算实数序列的幅值谱，返回主频及峰值频率列表。"""
     x = np.asarray(data, dtype=float)
     n = x.size
@@ -187,16 +187,14 @@ def signal_spectrum(data: List[float], dt_ms: float = 1.0) -> str:
     freq = np.fft.rfftfreq(n, d=dt_ms / 1000.0)
     order = np.argsort(amp)[::-1][:5]
     peaks = [
-        {"freq_hz": round(float(freq[i]), 2), "amp": round(float(amp[i]), 4)}
-        for i in order
-        if freq[i] > 0
+        {"freq_hz": round(float(freq[i]), 2), "amp": round(float(amp[i]), 4)} for i in order if freq[i] > 0
     ]
     return f"主频峰值(Hz, 幅值): {peaks}"
 
 
 @registry.register(category="geophysics")
 def signal_filter(
-    data: List[float],
+    data: list[float],
     dt_ms: float = 1.0,
     lowcut_hz: float = 0.0,
     highcut_hz: float = 0.0,
@@ -224,7 +222,7 @@ def signal_filter(
 
 
 @registry.register(category="geophysics")
-def velocity_to_depth(vp_ms: float, two_way_time_ms: List[float]) -> str:
+def velocity_to_depth(vp_ms: float, two_way_time_ms: list[float]) -> str:
     """用恒定速度把双程旅行时 (TWT) 转换为深度，返回每层的深度列表。"""
     depth = [round(v * t / 2000.0, 2) for v, t in [(vp_ms, t) for t in two_way_time_ms]]
     return f"vp={vp_ms} m/s, TWT={two_way_time_ms} ms -> 深度(m): {depth}"
