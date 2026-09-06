@@ -215,7 +215,7 @@ def test_lit_rag(tmp_path, monkeypatch):
     out = registry.execute("lit_ask", {"question": "什么是 ambient noise tomography?"})
     assert "ERROR" in out and "密钥" in out
     out = registry.execute("arxiv_download", {"arxiv_id": "bad-id"})
-    assert "ERROR" in out
+    assert "ERROR" in out  # noqa: F841 - out 用于断言
 
 
 def test_lit_semantic_backend(tmp_path, monkeypatch):
@@ -367,3 +367,47 @@ def test_benchmark_harness_offline():
         online = False
 
     assert "ERROR" in run_benchmark(OfflineAgent(), sc)
+
+
+def test_custom_provider_and_key(tmp_path, monkeypatch):
+    from geoagent.config import AgentConfig
+
+    monkeypatch.setattr(AgentConfig, "CONFIG_PATH", tmp_path / "config.json", raising=False)
+    monkeypatch.setattr("geoagent.config.CONFIG_PATH", tmp_path / "config.json")
+    cfg = AgentConfig()
+    out = cfg.upsert_provider("mygateway", "https://api.example.com/v1", "sk-x", "my-model")
+    assert "已保存" in out
+    assert "mygateway" in cfg.provider_names()
+    cfg.set_provider("mygateway")
+    assert cfg.api_key == "sk-x" and cfg.base_url == "https://api.example.com/v1"
+    assert "my-model" in cfg.models()
+    assert "不是自定义厂商" in cfg.delete_provider("openai")
+    assert "已删除" in cfg.delete_provider("mygateway")
+    cfg.set_key("zhipu", "zk-test")
+    cfg2 = AgentConfig()
+    assert cfg2.saved_keys.get("zhipu") == "zk-test"
+
+
+def test_permission_modes(tmp_path, monkeypatch):
+    from geoagent import GeoAgent
+
+    monkeypatch.chdir(tmp_path)
+    a = GeoAgent()
+    assert a.policy.mode == "standard"
+    # 只读：写被拒、读允许
+    a.policy.set_mode("readonly")
+    assert "权限拒绝" in a.run_tool("write_file", {"path": "x", "content": "y"})
+    assert "子波" in a.run_tool("ricker_wavelet", {"freq_hz": 30})
+    # 谨慎：无回调拒绝，有回调按返回值
+    a.policy.set_mode("ask")
+    assert "需要确认" in a.run_tool("write_file", {"path": "x", "content": "y"})
+    a.policy.confirm = lambda name, risk: True
+    assert "已写入" in a.run_tool("write_file", {"path": "x", "content": "y"})
+    a.policy.confirm = lambda name, risk: False
+    assert "拒绝" in a.run_tool("write_file", {"path": "x", "content": "y"})
+    # 自主：全放行
+    a.policy.set_mode("full")
+    assert "已写入" in a.run_tool("write_file", {"path": "x", "content": "y"})
+    # CLI 级切换接口
+    a.set_permission_mode("readonly")
+    assert a.policy.mode == "readonly" and a.config.permission_mode == "readonly"

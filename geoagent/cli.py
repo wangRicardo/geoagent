@@ -11,7 +11,7 @@ import re
 import sys
 
 from . import GeoAgent, __version__, registry
-from .config import PROVIDERS, THINKING_LEVELS
+from .config import PERMISSION_LABELS, PERMISSION_MODES, PROVIDERS, THINKING_LEVELS
 from .observability import log_uncaught, setup_logging
 
 BANNER = f"""
@@ -36,6 +36,9 @@ SLASH_HELP = """对话内命令:
   /export [文件名.md]       导出对话为 Markdown 研究日志（存到工作区）
   /save [名称] /load [名称] /sessions   会话快照（保存/恢复/列表）
   /usage                   本次会话 token 用量统计
+  /mode [模式]             权限模式: readonly/standard/ask/full
+  /key <厂商> <密钥>        保存厂商软件内密钥
+  /providers               列出全部厂商（内置+自定义）
   bench [--list]           运行 agent 自评测基准（需要在线）
   /tools                   列出工具
   /config                  配置保存位置: ~/.geoagent/config.json
@@ -77,6 +80,29 @@ def _handle_slash(line: str, agent: GeoAgent) -> str | None:
         return "已保存的会话: " + agent.list_sessions()
     if cmd == "/usage":
         return agent.usage_report()
+    if cmd == "/mode":
+        return (
+            agent.set_permission_mode(arg)
+            if arg
+            else (
+                f"当前权限模式: {agent.config.permission_mode}\n"
+                + "\n".join(f"  {m}: {PERMISSION_LABELS[m]}" for m in PERMISSION_MODES)
+            )
+        )
+    if cmd == "/key":
+        parts2 = arg.split(maxsplit=1)
+        if len(parts2) == 2:
+            return agent.config.set_key(parts2[0].lower(), parts2[1])
+        return "用法: /key <厂商名> <密钥>（保存软件内密钥，优先于环境变量）"
+    if cmd == "/providers":
+        cfg = agent.config
+        lines = ["可用厂商:"]
+        for n in cfg.provider_names():
+            mark = "●" if n == cfg.provider else "○"
+            custom = "（自定义）" if n in cfg.custom_providers else ""
+            key = "🔑" if (cfg.saved_keys.get(n) or cfg.custom_providers.get(n, {}).get("key")) else ""
+            lines.append(f"  {mark} {n} {custom}{key}")
+        return "\n".join(lines) + "\n添加厂商: /provider-add 名称 API地址 密钥 默认模型"
     if cmd == "/thinking":
         return (
             cfg.set_thinking(arg)

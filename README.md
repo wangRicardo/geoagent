@@ -5,7 +5,7 @@
 [![PyPI](https://img.shields.io/pypi/v/geoagent-ml?color=818cf8)](https://pypi.org/project/geoagent-ml/)
 [![Python](https://img.shields.io/badge/Python-3.10+-34d399.svg)](pyproject.toml)
 
-一个从零开始、可自己持续扩展的研究 agent 框架（当前版本 **v0.3.0**，内置 56 个工具，可在任意文件夹工作）。核心理念：**模型可以换，工具是你的资产**。
+一个从零开始、可自己持续扩展的研究 agent 框架（当前版本 **v0.3.0**，内置 58 个工具，可在任意文件夹工作）。核心理念：**模型可以换，工具是你的资产**。
 agent 的智力来自 LLM，价值来自你亲手写的领域工具（读 SEG-Y、看测井曲线、快速建模……）。
 
 官网：<https://wangricardo.github.io/geoagent/>
@@ -100,6 +100,11 @@ def wavelet_ricker(freq_hz: float, dt_ms: float = 1.0, length_ms: float = 100.0)
 ```bash
 ricardo gui              # 图形界面：文件夹工作区 + 提供商/模型/思考强度下拉热切换
 ```
+
+## 厂商管理与权限模式（v0.9.0）
+
+- **软件内设置**：⚙ 设置窗口添加多个自定义厂商（地址+密钥+默认模型）、保存/切换/测试连接，多厂商并存随时换模型
+- **权限模式**：只读 / 标准 / 谨慎（逐次确认）/ 自主 四档，按工具风险分级（联网/执行/写入/读取）拦截，CLI `/mode` 或界面下拉切换
 
 ## 深度学习与处理链（v0.7.0）
 

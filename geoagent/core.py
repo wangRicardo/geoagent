@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import AgentConfig
+from .permissions import PermissionPolicy
 from .tools.base import ToolRegistry
 from .tools.base import registry as default_registry
 
@@ -48,6 +49,7 @@ class GeoAgent:
         self.max_history = max_history
         self.system_prompt = system_prompt
         self.config = AgentConfig()
+        self.policy = PermissionPolicy(self.config.permission_mode)
         self.history: list[dict[str, Any]] = []
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "calls": 0}
         self._client = None
@@ -91,6 +93,14 @@ class GeoAgent:
     def online(self) -> bool:
         self._init_llm()
         return self._client is not None
+
+    def set_permission_mode(self, mode: str, confirm: Callable[[str, str], bool] | None = None) -> str:
+        """切换权限模式（持久化 + 立即生效），可注入确认回调。"""
+        out = self.config.set_permission_mode(mode)
+        self.policy.set_mode(mode)
+        if confirm is not None:
+            self.policy.confirm = confirm
+        return out
 
     def reload(self) -> str:
         self._init_llm(force=True)
@@ -249,6 +259,9 @@ class GeoAgent:
     # -- 工具执行 ---------------------------------------------------------------
 
     def run_tool(self, name: str, args: dict[str, Any]) -> str:
+        allowed, reason = self.policy.check(name)
+        if not allowed:
+            return f"ERROR: 权限拒绝 —— {reason}（当前模式 {self.policy.mode}）"
         return self.registry.execute(name, args)
 
     # -- 对话 ----------------------------------------------------------------
@@ -304,7 +317,12 @@ class GeoAgent:
                 except json.JSONDecodeError:
                     args = {}
                 emit({"type": "tool_start", "name": name, "args": args})
-                result = self.registry.execute(name, args)
+                allowed, reason = self.policy.check(name)
+                result = (
+                    self.registry.execute(name, args)
+                    if allowed
+                    else (f"ERROR: 权限拒绝 —— {reason}。可让用户切换权限模式（如 /mode full）后重试。")
+                )
                 emit({"type": "tool_end", "name": name, "result": result})
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
         return "已达单轮工具调用上限，请拆分任务后重试。"

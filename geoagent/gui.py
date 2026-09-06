@@ -21,7 +21,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from . import GeoAgent
-from .config import PROVIDERS, THINKING_LEVELS
+from .config import PERMISSION_LABELS, PROVIDERS, THINKING_LEVELS
 from .observability import gui_crash_hook, setup_logging
 
 # -- 配色（与官网一致的深色科技风） -------------------------------------------
@@ -329,6 +329,37 @@ class ChatWindow:
         self._sys(self.agent.config.set_thinking(self.cmb_think.get()))
         self._refresh_status()
 
+    def _sync_perm_combo(self) -> None:
+        m = self.agent.config.permission_mode
+        self.cmb_perm.set(f"{m} · {PERMISSION_LABELS[m]}")
+
+    def _on_perm_change(self) -> None:
+        sel = self.cmb_perm.get().split(" · ")[0]
+        if sel == "ask":
+            self._sys("谨慎模式：写入/执行/联网将在弹窗中逐次确认。")
+        out = self.agent.set_permission_mode(sel, confirm=self._confirm_tool)
+        self._sys(out)
+        self._refresh_status()
+
+    def _confirm_tool(self, tool_name: str, risk: str) -> bool:
+        """谨慎模式的逐次确认回调：后台线程等待，主线程弹窗。"""
+        import threading as _th
+
+        box = {"yes": False}
+        done = _th.Event()
+
+        def _ask_main() -> None:
+            box["yes"] = messagebox.askyesno(
+                "权限确认",
+                f"权限模式为「谨慎」，工具 {tool_name} 需要{risk}权限。\n\n允许本次调用吗？",
+            )
+            done.set()
+
+        self.root.after(0, _ask_main)
+        while not done.wait(timeout=0.1):
+            pass
+        return box["yes"]
+
     def _pick_workdir(self) -> None:
         d = filedialog.askdirectory(title="选择工作文件夹", initialdir=self.agent.workdir)
         if d:
@@ -495,3 +526,173 @@ def launch(workdir: str | None = None) -> None:
         ChatWindow(workdir).run()
     except tk.TclError as exc:
         raise SystemExit(f"无法启动图形界面（无显示环境?）: {exc}") from exc
+
+
+class SettingsDialog(tk.Toplevel):
+    """设置窗口：厂商管理（内置+自定义）、密钥保存、连接测试。"""
+
+    def __init__(self, parent, agent: GeoAgent, on_change) -> None:
+        super().__init__(parent)
+        self.agent = agent
+        self.on_change = on_change  # 变更后刷新主界面
+        self.title("设置 — 提供商与密钥")
+        self.geometry("640x520")
+        self.configure(bg=BG)
+        self.transient(parent)
+        self.grab_set()
+
+        tk.Label(self, text="提供商", font=("Microsoft YaHei UI", 11, "bold"), bg=BG, fg=TEXT).pack(
+            anchor="w", padx=16, pady=(14, 4)
+        )
+        row = tk.Frame(self, bg=BG)
+        row.pack(fill="x", padx=16)
+        self.lst = tk.Listbox(row, height=8, bg=CARD, fg=TEXT, bd=0, highlightbackground=BORDER, font=FONT)
+        self.lst.pack(side="left", fill="both", expand=True)
+        self.lst.bind("<<ListboxSelect>>", lambda e: self._load_selected())
+        ops = tk.Frame(row, bg=BG)
+        ops.pack(side="left", fill="y", padx=(8, 0))
+        for text in ["设为当前", "删除"]:
+            tk.Label(ops, text=text, font=FONT_S, bg=CARD, fg=TEXT, padx=10, pady=6, cursor="hand2").pack(
+                fill="x", pady=3
+            )
+        # 手动绑定点击
+        for w in ops.winfo_children():
+            w.bind("<Button-1>", lambda e, w=w: self._op(w["text"]))
+        self._reload_list()
+
+        form = tk.Frame(self, bg=BG)
+        form.pack(fill="x", padx=16, pady=(10, 0))
+        self.fields: dict[str, tk.Entry] = {}
+        for i, (key, label, width) in enumerate(
+            [
+                ("name", "厂商名", 16),
+                ("base_url", "API 地址", 44),
+                ("key", "API 密钥", 44),
+                ("default_model", "默认模型", 24),
+            ]
+        ):
+            tk.Label(form, text=label, font=FONT_XS, bg=BG, fg=MUTED).grid(
+                row=i, column=0, sticky="w", pady=3
+            )
+            e = tk.Entry(
+                form,
+                width=width,
+                bg=CARD,
+                fg=TEXT,
+                bd=0,
+                insertbackground=ACCENT,
+                font=FONT_S,
+                show="•" if key == "key" else "",
+            )
+            e.grid(row=i, column=1, sticky="w", padx=8, pady=3)
+            self.fields[key] = e
+
+        btns = tk.Frame(self, bg=BG)
+        btns.pack(fill="x", padx=16, pady=12)
+        for text, cmd in [
+            ("💾 保存厂商", self._save),
+            ("🔑 保存密钥", self._save_key),
+            ("🧪 测试连接", self._test),
+            ("✖ 关闭", self.destroy),
+        ]:
+            lbl = tk.Label(btns, text=text, font=FONT_S, bg=CARD, fg=ACCENT, padx=12, pady=6, cursor="hand2")
+            lbl.pack(side="left", padx=(0, 8))
+            lbl.bind("<Button-1>", lambda e, c=cmd: c())
+        tk.Label(
+            self,
+            text="提示：密钥保存在本地 ~/.geoagent/config.json（明文），也可继续使用环境变量方式。",
+            font=FONT_XS,
+            bg=BG,
+            fg=MUTED,
+            wraplength=600,
+            justify="left",
+        ).pack(anchor="w", padx=16, pady=(0, 12))
+
+    def _reload_list(self) -> None:
+        cfg = self.agent.config
+        self.lst.delete(0, "end")
+        for n in cfg.provider_names():
+            mark = "●" if cfg.provider == n else "○"
+            custom = "（自定义）" if n in cfg.custom_providers else ""
+            has_key = "🔑" if (cfg.saved_keys.get(n) or cfg.custom_providers.get(n, {}).get("key")) else ""
+            self.lst.insert("end", f"{mark} {n} {custom}{has_key}")
+
+    def _selected_name(self) -> str | None:
+        sel = self.lst.curselection()
+        if not sel:
+            return None
+        return self.agent.config.provider_names()[sel[0]]
+
+    def _load_selected(self) -> None:
+        name = self._selected_name()
+        if not name:
+            return
+        cfg = self.agent.config
+        preset = cfg.custom_providers.get(name) or PROVIDERS.get(name, {})
+        self.fields["name"].delete(0, "end")
+        self.fields["name"].insert(0, name)
+        self.fields["base_url"].delete(0, "end")
+        self.fields["base_url"].insert(0, preset.get("base_url", ""))
+        self.fields["key"].delete(0, "end")
+        self.fields["key"].insert(0, cfg.saved_keys.get(name) or preset.get("key", ""))
+        self.fields["default_model"].delete(0, "end")
+        self.fields["default_model"].insert(0, preset.get("default_model", ""))
+
+    def _op(self, text: str) -> None:
+        if text == "设为当前":
+            name = self._selected_name()
+            if name:
+                self.agent.config.set_provider(name)
+                self._reload_list()
+                self.on_change()
+        elif text == "删除":
+            name = self._selected_name()
+            if name:
+                self._sysmsg(self.agent.config.delete_provider(name))
+                self._reload_list()
+                self.on_change()
+
+    def _save(self) -> None:
+        msg = self.agent.config.upsert_provider(
+            self.fields["name"].get(),
+            self.fields["base_url"].get(),
+            self.fields["key"].get(),
+            self.fields["default_model"].get(),
+        )
+        self._sysmsg(msg)
+        self._reload_list()
+        self.on_change()
+
+    def _save_key(self) -> None:
+        name = self.fields["name"].get().strip().lower()
+        if not name:
+            self._sysmsg("ERROR: 请填写厂商名")
+            return
+        self._sysmsg(self.agent.config.set_key(name, self.fields["key"].get()))
+        self._reload_list()
+
+    def _test(self) -> None:
+        cfg = self.agent.config
+        base = self.fields["base_url"].get().strip() or cfg.base_url
+        key = self.fields["key"].get().strip() or (cfg.api_key or "")
+        import requests
+
+        try:
+            r = requests.get(
+                base.rstrip("/") + "/models", headers={"Authorization": f"Bearer {key}"}, timeout=8
+            )
+            n = len(r.json().get("data", []))
+            self._sysmsg(f"✅ 连接成功，发现 {n} 个模型")
+        except Exception as exc:  # noqa: BLE001
+            self._sysmsg(f"❌ 连接失败: {exc}")
+
+    def _sysmsg(self, msg: str) -> None:
+        messagebox.showinfo("设置", msg)
+
+
+def _open_settings(self) -> None:
+    SettingsDialog(self.root, self.agent, on_change=self._refresh_status)
+
+
+# 动态挂载方法
+ChatWindow._open_settings = _open_settings
