@@ -1,0 +1,46 @@
+{
+  "scenarios": [
+    {
+      "name": "ricker_forward",
+      "user": "生成一个主频 30Hz 的 Ricker 子波并告诉我峰值振幅",
+      "expect_tools": ["ricker_wavelet"],
+      "description": "正演基础：子波生成"
+    },
+    {
+      "name": "velocity_depth",
+      "user": "vp=3000m/s 时，TWT 1000ms 和 2000ms 分别对应多深？",
+      "expect_tools": ["velocity_to_depth"],
+      "description": "时深转换"
+    },
+    {
+      "name": "ml_baseline",
+      "user": "用这些特征和标签训练一个基线模型看准确率",
+      "expect_tools": ["dataset_profile", "quick_train"],
+      "description": "ML 基线流程（模型可自行补充数据参数）"
+    },
+    {
+      "name": "processing_chain",
+      "user": "对这个 CMP 道集做速度分析",
+      "expect_tools": ["nmo_velocity_scan"],
+      "description": "地震处理：速度分析"
+    },
+    {
+      "name": "plot_and_check",
+      "user": "画一张这两个数的交会图",
+      "expect_tools": ["plot_crossplot"],
+      "description": "绘图 + 视觉自查闭环"
+    },
+    {
+      "name": "literature_search",
+      "user": "搜一下 arXiv 上关于震相拾取深度学习的最新论文",
+      "expect_tools": ["arxiv_search"],
+      "description": "文献检索"
+    },
+    {
+      "name": "latex_report",
+      "user": "把这段结论写成 LaTeX 报告",
+      "expect_tools": ["latex_write"],
+      "description": "论文撰写"
+    }
+  ]
+}

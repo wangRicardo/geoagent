@@ -33,6 +33,7 @@ class ChatWindow:
         self._build_ui()
         self._queue: queue.Queue = queue.Queue()
         self._live_open = False
+        self._reply_started = False
         self.root.after(120, self._poll_queue)
         self._log_system(BANNER_LINE)
         self._log_system(f"工作区: {self.agent.workdir}")
@@ -203,6 +204,7 @@ class ChatWindow:
             return
         self.btn_send.configure(state="disabled")
         self._live_open = False
+        self._reply_started = False
         threading.Thread(target=self._worker, args=(text,), daemon=True).start()
 
     def _worker(self, text: str) -> None:
@@ -210,8 +212,8 @@ class ChatWindow:
             self._queue.put(("ev", ev))
 
         try:
-            reply = self.agent.chat(text, on_event=on_event)
-            self._queue.put(("done", reply))
+            self.agent.chat(text, on_event=on_event)
+            self._queue.put(("done", self.agent.usage_report()))
         except Exception as exc:  # noqa: BLE001
             self._queue.put(("error", f"ERROR: {exc}"))
 
@@ -220,14 +222,18 @@ class ChatWindow:
         self.txt.configure(state="normal")
         if ev["type"] == "delta":
             if not self._live_open:
-                self.txt.insert("end", "\n🤖 ", "assistant")
+                if self._reply_started:
+                    self.txt.insert("end", "\n\n", "assistant")
+                self.txt.insert("end", "🤖 ", "assistant")
                 self._live_open = True
+                self._reply_started = True
             self.txt.insert("end", ev["text"], "assistant")
             self.txt.see("end")
         elif ev["type"] == "tool_start":
             import json as _json
             args_s = _json.dumps(ev["args"], ensure_ascii=False)[:110]
             self._live_open = False
+            self._reply_started = False
             self.txt.insert("end", f"\n🔧 {ev['name']}({args_s})\n", "tool")
         elif ev["type"] == "tool_end":
             r = ev["result"].replace("\n", " ")
@@ -243,13 +249,16 @@ class ChatWindow:
                     self._handle_event(msg)
                     continue
                 if tag == "done":
-                    if not self._live_open:
+                    if not self._reply_started:
                         self._append("🤖 " + msg, "assistant")
                     else:
                         self._append("", "assistant")
+                        self._log_system(msg)  # 用量统计
                     self._live_open = False
+                    self._reply_started = False
                 else:
                     self._live_open = False
+                    self._reply_started = False
                     self._append(msg, "error")
         except queue.Empty:
             pass

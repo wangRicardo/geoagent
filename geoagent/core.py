@@ -47,6 +47,7 @@ class GeoAgent:
         self.system_prompt = system_prompt
         self.config = AgentConfig()
         self.history: List[Dict[str, Any]] = []
+        self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "calls": 0}
         self._client = None
         self._client_key: tuple = ()
         self.workdir = os.path.abspath(workdir or os.getcwd())
@@ -99,20 +100,32 @@ class GeoAgent:
     def _create_stream(self, params: Dict[str, Any]):
         """指数退避重试（最多 3 次）；流开始后不再重试，避免重复输出。"""
         last_exc: Exception | None = None
+        # 请求用量统计；不支持的端点会报错，去掉该参数重试一次
+        params = dict(params, stream_options={"include_usage": True})
         for attempt in range(3):
             try:
                 return self._client.chat.completions.create(**params, stream=True)
             except Exception as exc:  # noqa: BLE001
+                if "stream_options" in params and attempt == 0 and (
+                        "stream_options" in str(exc) or "usage" in str(exc).lower()):
+                    params.pop("stream_options")
+                    continue
                 last_exc = exc
                 if attempt < 2:
                     time.sleep(1.5 * (2 ** attempt))
         raise RuntimeError(f"LLM 调用失败（已重试 3 次）: {last_exc}")
 
     def _consume_stream(self, stream, emit: Callable[[Dict[str, Any]], None]):
-        """消费流式响应：文本逐字 emit；工具调用按 index 拼装。"""
+        """消费流式响应：文本逐字 emit；工具调用按 index 拼装；统计用量。"""
         parts: List[str] = []
         tc: Dict[int, Dict[str, str]] = {}
         for chunk in stream:
+            usage = getattr(chunk, "usage", None)
+            if usage is not None:  # 最后一个 chunk 携带用量
+                self.usage["prompt_tokens"] += getattr(usage, "prompt_tokens", 0) or 0
+                self.usage["completion_tokens"] += getattr(usage, "completion_tokens", 0) or 0
+                self.usage["total_tokens"] += getattr(usage, "total_tokens", 0) or 0
+                self.usage["calls"] += 1
             if not getattr(chunk, "choices", None):
                 continue
             delta = chunk.choices[0].delta
@@ -150,6 +163,12 @@ class GeoAgent:
         return params
 
     # -- 会话快照 ----------------------------------------------------------------
+
+    def usage_report(self) -> str:
+        u = self.usage
+        return (f"本次会话 LLM 用量: 调用 {u['calls']} 次 | "
+                f"输入 {u['prompt_tokens']:,} + 输出 {u['completion_tokens']:,} "
+                f"= {u['total_tokens']:,} tokens")
 
     def save_session(self, name: str = "session") -> str:
         SESSIONS_DIR.mkdir(parents=True, exist_ok=True)

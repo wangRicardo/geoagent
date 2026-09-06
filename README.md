@@ -1,6 +1,6 @@
 # Ricardo Agent —— 你的地球物理 × 机器学习个人 Agent
 
-一个从零开始、可自己持续扩展的研究 agent 框架（当前版本 **v0.3.0**，内置 45 个工具，可在任意文件夹工作）。核心理念：**模型可以换，工具是你的资产**。
+一个从零开始、可自己持续扩展的研究 agent 框架（当前版本 **v0.3.0**，内置 56 个工具，可在任意文件夹工作）。核心理念：**模型可以换，工具是你的资产**。
 agent 的智力来自 LLM，价值来自你亲手写的领域工具（读 SEG-Y、看测井曲线、快速建模……）。
 
 官网：<https://wangricardo.github.io/geoagent/>
@@ -93,6 +93,14 @@ def wavelet_ricker(freq_hz: float, dt_ms: float = 1.0, length_ms: float = 100.0)
 ```bash
 ricardo gui              # 图形界面：文件夹工作区 + 提供商/模型/思考强度下拉热切换
 ```
+
+## 深度学习与处理链（v0.7.0）
+
+- PyTorch MLP 训练（早停+损失曲线）与预测：`train_mlp_classifier` / `mlp_predict`（`pip install torch --index-url https://download.pytorch.org/whl/cpu`）
+- 地震处理链：semblance 速度扫描 → NMO → 叠加 → 绕射偏移
+- 新绘图：时频谱图、彩色振幅剖面、三分量地震图；出图自动视觉质检
+- `ricardo bench`：agent 行为回归评测（7 场景）
+- `/usage` token 统计；双 exe 构建（终端 + 无黑窗 GUI）
 
 ## 文献 RAG（v0.6.0）
 

@@ -26,6 +26,21 @@ def _save(fig, filename: str) -> str:
     return full
 
 
+def _auto_vision_check(path: str) -> str:
+    """出图后自动做一次视觉质检（需要 API 密钥）；失败静默跳过不阻塞出图。
+
+    设环境变量 RICARDO_AUTO_VISION=0 可关闭。
+    """
+    if os.environ.get("RICARDO_AUTO_VISION", "1") == "0":
+        return ""
+    try:
+        from .vision_tools import see_image
+        out = see_image(path, "快速质检：这张图是否达到论文插图水准？只给一句话结论。")
+        return "\n  👁 视觉自查: " + out.splitlines()[0] if out else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 @registry.register(category="plot")
 def plot_seismic_section(
     traces: List[List[float]],
@@ -153,3 +168,94 @@ def plot_time_series(
     path = _save(fig, filename)
     plt.close(fig)
     return f"时序图已保存: {path}\n  {len(series)} 条曲线 x {t.size} 点, dt={dt_s}s"
+
+
+@registry.register(category="plot")
+def plot_spectrogram(
+    data: List[float],
+    dt_ms: float = 1.0,
+    filename: str = "spectrogram.png",
+    title: str = "Time-Frequency Spectrogram",
+) -> str:
+    """时频谱图（STFT），展示信号频率成分随时间的变化（地震道/测井曲线均适用）。"""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from scipy.signal import spectrogram
+
+    x = np.asarray(data, dtype=float)
+    fs = 1000.0 / dt_ms
+    f, t, Sxx = spectrogram(x, fs=fs, nperseg=min(128, x.size))
+    fig, ax = plt.subplots(figsize=(9, 4.5))
+    im = ax.pcolormesh(t, f, 10 * np.log10(Sxx + 1e-12), shading="auto", cmap="inferno")
+    fig.colorbar(im, ax=ax, label="Power (dB)")
+    ax.set_xlabel("Time (ms)")
+    ax.set_ylabel("Frequency (Hz)")
+    ax.set_title(title)
+    path = _save(fig, filename)
+    plt.close(fig)
+    peak_f = float(f[np.argmax(Sxx.mean(axis=1))])
+    return (f"时频谱图已保存: {path}\n  {x.size} 采样, 频带 0~{fs/2:.0f} Hz, "
+            f"平均能量主频 {peak_f:.1f} Hz" + _auto_vision_check(path))
+
+
+@registry.register(category="plot")
+def plot_amplitude_section(
+    traces: List[List[float]],
+    dt_ms: float = 1.0,
+    filename: str = "amp_section.png",
+    title: str = "Amplitude Section",
+    cmap: str = "seismic",
+) -> str:
+    """振幅彩色剖面（imshow）：波形细节的直观显示，适合对比处理前后。"""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    data = np.asarray(traces, dtype=float)
+    if data.ndim != 2:
+        return f"ERROR: traces 需是二维列表（每行一道），当前 {data.ndim} 维"
+    vmax = float(np.abs(data).max()) or 1.0
+    fig, ax = plt.subplots(figsize=(9, 5.5))
+    im = ax.imshow(data.T, aspect="auto", cmap=cmap, vmin=-vmax, vmax=vmax,
+                   extent=[0, data.shape[0], data.shape[1] * dt_ms, 0])
+    fig.colorbar(im, ax=ax, label="Amplitude")
+    ax.set_xlabel("Trace")
+    ax.set_ylabel("Time (ms)")
+    ax.set_title(title)
+    path = _save(fig, filename)
+    plt.close(fig)
+    return (f"振幅剖面已保存: {path}\n  {data.shape[0]} 道 x {data.shape[1]} 采样, "
+            f"色标 ±{vmax:.3g}" + _auto_vision_check(path))
+
+
+@registry.register(category="plot")
+def plot_three_component(
+    data_e: List[float],
+    data_n: List[float],
+    data_z: List[float],
+    dt_s: float = 0.01,
+    filename: str = "three_component.png",
+    station: str = "Station",
+) -> str:
+    """三分量地震图（E/N/Z 并排），台站事件分析的标准展示。"""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    comps = [np.asarray(d, dtype=float) for d in (data_e, data_n, data_z)]
+    if len({c.size for c in comps}) != 1:
+        return "ERROR: 三分量长度必须一致"
+    t = np.arange(comps[0].size) * dt_s
+    fig, axes = plt.subplots(3, 1, figsize=(9, 6), sharex=True)
+    for ax, c, name in zip(axes, comps, ["E", "N", "Z"]):
+        ax.plot(t, c, lw=0.8, color="#22d3ee" if name != "Z" else "#f472b6")
+        ax.set_ylabel(f"{name}\n(counts)")
+        ax.grid(alpha=.25)
+    axes[-1].set_xlabel("Time (s)")
+    fig.suptitle(f"Three-Component Seismogram — {station}")
+    path = _save(fig, filename)
+    plt.close(fig)
+    peak_z = float(np.abs(comps[2]).max())
+    return (f"三分量图已保存: {path}\n  {comps[0].size} 采样, Z 分量最大振幅 {peak_z:.3g}"
+            + _auto_vision_check(path))

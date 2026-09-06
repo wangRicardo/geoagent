@@ -21,7 +21,7 @@ BANNER = r"""
 ╚█████╔╝╚██████╔╝███████║    ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║
  ╚════╝  ╚═════╝ ╚══════╝    ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║
                              ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝
-        地球物理 × 机器学习 · 你的个人研究 Agent · v0.6.1
+        地球物理 × 机器学习 · 你的个人研究 Agent · v0.7.0
 """
 
 SLASH_HELP = """对话内命令:
@@ -34,6 +34,8 @@ SLASH_HELP = """对话内命令:
   /clear                   清空对话历史
   /export [文件名.md]       导出对话为 Markdown 研究日志（存到工作区）
   /save [名称] /load [名称] /sessions   会话快照（保存/恢复/列表）
+  /usage                   本次会话 token 用量统计
+  bench [--list]           运行 agent 自评测基准（需要在线）
   /tools                   列出工具
   /config                  配置保存位置: ~/.geoagent/config.json
 其余输入都会发给模型。"quit" 或 Ctrl+C 退出。""".format(
@@ -69,6 +71,8 @@ def _handle_slash(line: str, agent: GeoAgent) -> str | None:
         return agent.load_session(arg or "session") + f"\n工作目录: {agent.workdir}"
     if cmd == "/sessions":
         return "已保存的会话: " + agent.list_sessions()
+    if cmd == "/usage":
+        return agent.usage_report()
     if cmd == "/thinking":
         return cfg.set_thinking(arg) if arg else f"思考强度当前: {cfg.thinking}，可选: {', '.join(THINKING_LEVELS)}"
     if cmd == "/cd":
@@ -160,6 +164,17 @@ def _kv(line: str, key: str) -> str:
 
 def main() -> None:
     args = [a for a in sys.argv[1:] if a not in ("--demo", "--simple")]
+    if "--list" in args and "bench" in args:
+        from .bench import load_scenarios
+        for sc in load_scenarios():
+            print(f"  {sc['name']:20s} 期望工具: {sc.get('expect_tools')}")
+        return
+    if "bench" in args:
+        from .bench import run_benchmark, load_scenarios
+        agent = GeoAgent(workdir=next((a for a in args if not a.startswith("-") and a != "bench"), None))
+        print("运行评测（会真实调用 LLM）...")
+        print(run_benchmark(agent, load_scenarios(), on_progress=print))
+        return
     demo = len(args) != len(sys.argv[1:])
     workdir = next((a for a in args if not a.startswith("-") and
                     a not in ("tools", "run", "chat", "gui", "help")), None)

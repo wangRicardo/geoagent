@@ -244,3 +244,87 @@ def test_lit_semantic_backend(tmp_path, monkeypatch):
     # tfidf 兜底依然可用
     out = registry.execute("lit_search", {"query": "transformer encoder", "k": 1})
     assert "tfidf" in out or "后端" in out
+
+
+def test_processing_chain(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    rng = np.random.default_rng(0)
+    dt, n = 2.0, 800
+    offsets = np.linspace(100, 2400, 24).tolist()
+    data = []
+    for x in offsets:
+        tr = rng.normal(0, 0.05, n)
+        for t0, v in [(500, 2000), (1000, 3500)]:
+            j = int(np.sqrt(t0 ** 2 + (x / v * 1000) ** 2) / dt)
+            if j < n:
+                tr[j] += 1.0
+        data.append(tr.tolist())
+    picks = registry.execute("nmo_velocity_scan",
+                             {"traces": data, "dt_ms": dt, "offsets_m": offsets, "n_picks": 2})
+    assert "速度谱拾取" in picks
+    assert "(494.0, 2008" in picks and "(990.0, 3534" in picks  # 反演精度 <1%
+    assert "NMO 校正完成" in registry.execute("nmo_correct", {
+        "traces": data, "dt_ms": dt, "offsets_m": offsets, "velocity": 2000.0})
+    assert "叠加完成" in registry.execute("stack_traces", {"traces": data})
+    assert "绕射叠加偏移完成" in registry.execute("diffraction_stack_migrate",
+                                                  {"traces": data[:8], "dx_m": 100.0})
+
+
+def test_mlp_train_predict(tmp_path, monkeypatch):
+    torch = pytest_import_or_skip()
+    monkeypatch.chdir(tmp_path)
+    rng = np.random.default_rng(1)
+    X = rng.normal(0, 1, (120, 3)).tolist()
+    y = [1 if (r[0] + r[1]) > 0.5 else 0 for r in X]
+    out = registry.execute("train_mlp_classifier",
+                           {"features": X, "labels": y, "epochs": 8, "model_name": "t1"})
+    assert "训练完成" in out and "验证集准确率" in out
+    assert (tmp_path / "ricardo_models" / "t1.json").exists()
+    out = registry.execute("mlp_predict", {"model_name": "t1", "features": X[:2]})
+    assert "→" in out
+
+
+def pytest_import_or_skip():
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("未安装 torch")
+    return torch
+
+
+def test_new_plots(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    t = np.arange(500) * 0.002
+    sig = (np.sin(2 * np.pi * 20 * t)).tolist()
+    for name, kwargs in [
+        ("plot_spectrogram", {"data": sig, "dt_ms": 2.0}),
+        ("plot_amplitude_section", {"traces": [sig, list(reversed(sig))], "dt_ms": 2.0}),
+        ("plot_three_component", {"data_e": sig, "data_n": sig, "data_z": sig}),
+    ]:
+        out = registry.execute(name, kwargs)
+        assert "已保存" in out, out
+
+
+def test_lit_compare_needs_multiple(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "a.txt").write_text("ambient noise tomography study one", encoding="utf-8")
+    registry.execute("lit_ingest", {"paths": ["a.txt"]})
+    out = registry.execute("lit_compare", {"question": "结论是什么?"})
+    assert "ERROR" in out or "至少需要 2 篇" in out
+
+
+def test_benchmark_harness_offline():
+    from geoagent.bench import run_benchmark, load_scenarios
+
+    class FakeAgent:
+        online = True
+        def chat(self, user, on_event=None):
+            on_event({"type": "tool_start", "name": "ricker_wavelet"})
+            return "ok"
+    sc = [s for s in load_scenarios() if s["name"] == "ricker_forward"]
+    assert "✅" in run_benchmark(FakeAgent(), sc)
+
+    class OfflineAgent:
+        online = False
+    assert "ERROR" in run_benchmark(OfflineAgent(), sc)

@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.7.0 (2026-09-05)
+
+深度学习 + 处理链 + 体验大版本（56 个工具，22 项测试）。
+
+- PyTorch 工作流：`train_mlp_classifier`（标准化/早停/损失曲线/保存最优权重）、
+  `mlp_predict`（加载预测+概率）；表格数据地震属性→岩性分类开箱即用
+- 地震处理链：`nmo_velocity_scan`（semblance 速度谱，合成数据反演精度 <1%）、
+  `nmo_correct`（双曲线动校正+拉伸切除）、`stack_traces`、`diffraction_stack_migrate`
+- 绘图深化：`plot_spectrogram`（时频谱）、`plot_amplitude_section`（彩色剖面）、
+  `plot_three_component`（三分量）；所有 plot 工具出图后自动视觉质检
+  （需密钥，RICARDO_AUTO_VISION=0 关闭）
+- RAG 深化：`lit_ingest_crossref`（Crossref 检索→摘要入库）、
+  `lit_compare`（多篇文献联合对比表）
+- Agent 自评测基准：`ricardo bench`（7 个标准场景，期望工具调用回归检查）
+- Token 用量：`/usage` 命令 + GUI 每轮回复后自动显示
+- 双 exe：RicardoAgent.exe（终端）+ RicardoAgentGUI.exe（无控制台黑窗）
+
 ## v0.6.1 (2026-09-05)
 
 语义检索升级（45 个工具）。

@@ -596,3 +596,98 @@ def arxiv_download(arxiv_id: str, ingest: bool = True) -> str:
     if ingest:
         out += "\n" + lit_ingest([fname])
     return out
+
+
+@registry.register(category="rag")
+def lit_ingest_crossref(query: str, rows: int = 5, save_dir: str = "lit_sources") -> str:
+    """从 Crossref 检索文献并把摘要/元数据保存为 Markdown 后入库。
+
+    Crossref 的 abstract 字段只有部分出版社提供；无摘要的条目仍会保存
+    标题/作者/年份/DOI 作为背景卡片。入库后可用 lit_search/lit_ask 检索。
+    """
+    try:
+        r = requests.get("https://api.crossref.org/works",
+                         params={"query.bibliographic": query, "rows": rows},
+                         headers=UA, timeout=30)
+        items = r.json()["message"]["items"] if r.ok else []
+    except Exception as exc:  # noqa: BLE001
+        return f"ERROR: Crossref 查询失败: {exc}"
+    if not items:
+        return f"Crossref 没有返回与 {query!r} 匹配的文献。"
+    root = os.getcwd()
+    dirp = os.path.abspath(os.path.join(root, save_dir))
+    if os.path.commonpath([root, dirp]) != root:
+        return "ERROR: 路径越出工作目录"
+    os.makedirs(dirp, exist_ok=True)
+    saved = []
+    for i, meta in enumerate(items, 1):
+        title = (meta.get("title") or ["untitled"])[0]
+        safe = re.sub(r"[^\w\u4e00-\u9fff-]+", "_", title)[:60]
+        year = (meta.get("published", {}).get("date-parts") or [["n.d."]])[0][0]
+        authors = ", ".join(a.get("family", "") for a in meta.get("author", [])[:6])
+        abstract = re.sub(r"<[^>]+>", " ", meta.get("abstract") or "")
+        content = (f"# {title}\n\n- 作者: {authors}\n- 年份: {year}\n"
+                   f"- 期刊: {(meta.get('container-title') or ['?'])[0]}\n"
+                   f"- DOI: {meta.get('DOI', '')}\n\n## 摘要\n\n{abstract or '（Crossref 未提供摘要）'}\n")
+        fname = os.path.join(save_dir, f"{i:02d}_{safe}.md")
+        with open(os.path.join(root, fname), "w", encoding="utf-8") as f:
+            f.write(content)
+        saved.append(fname)
+    out = f"已保存 {len(saved)} 篇到 {save_dir}/，开始入库...\n"
+    return out + lit_ingest([save_dir])
+
+
+@registry.register(category="rag")
+def lit_compare(question: str, k_per_source: int = 3) -> str:
+    """多篇文献联合对比问答：分别检索各文献最相关段落，让模型生成对比分析。
+
+    需要至少 2 篇不同来源的文献入库；需要 API 密钥。
+    """
+    db = _load_db()
+    if not db["chunks"]:
+        return "文献库为空。先用 lit_ingest / arxiv_download / lit_ingest_crossref 导入文献。"
+    scores = _semantic_scores(db, question)
+    if scores is None:
+        scores = _tfidf_scores(db, question)
+    order = np.argsort(scores)[::-1]
+    by_source: dict[str, List[str]] = {}
+    for i in order:
+        if scores[i] <= 0:
+            break
+        c = db["chunks"][int(i)]
+        bucket = by_source.setdefault(c["source"], [])
+        if len(bucket) < k_per_source:
+            bucket.append(c["text"])
+        if sum(len(v) for v in by_source.values()) >= 6 * k_per_source:
+            break
+    if len(by_source) < 2:
+        return (f"联合对比至少需要 2 篇文献，当前只检索到 {len(by_source)} 篇相关来源。"
+                "请导入更多相关文献。")
+    from ..config import AgentConfig
+    cfg = AgentConfig()
+    if not cfg.api_key:
+        return ("ERROR: lit_compare 的综合分析需要 API 密钥。\n"
+                + "\n".join(f"[{s}] 相关段落 {len(v)} 个" for s, v in by_source.items()))
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return "ERROR: 需要 openai 库: pip install openai"
+    blocks = []
+    for n, (src, chunks) in enumerate(sorted(by_source.items()), 1):
+        blocks.append(f"### 文献{n}: {src}\n" + "\n".join(chunks))
+    client = OpenAI(api_key=cfg.api_key, base_url=cfg.base_url)
+    prompt = (
+        "你是文献综述助手。基于以下从多篇文献中检索到的片段，回答对比问题。\n"
+        "要求：生成 Markdown 对比表（至少涵盖方法/数据/结论三行），"
+        "表后用 2-3 句话总结异同，并标注来源编号 [n]。\n\n"
+        f"对比问题: {question}\n\n" + "\n\n".join(blocks)
+    )
+    try:
+        resp = client.chat.completions.create(
+            model=cfg.model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1500,
+        )
+        return resp.choices[0].message.content or "（模型未返回内容）"
+    except Exception as exc:  # noqa: BLE001
+        return f"ERROR: LLM 调用失败: {exc}"
