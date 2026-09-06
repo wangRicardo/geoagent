@@ -3,6 +3,7 @@
 import math
 
 import numpy as np
+import pytest
 
 from geoagent import registry
 
@@ -328,6 +329,7 @@ def pytest_import_or_skip():
 
 
 def test_new_plots(tmp_path, monkeypatch):
+    pytest.importorskip("matplotlib")
     monkeypatch.chdir(tmp_path)
     t = np.arange(500) * 0.002
     sig = (np.sin(2 * np.pi * 20 * t)).tolist()
