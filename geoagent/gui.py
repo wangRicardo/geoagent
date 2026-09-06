@@ -61,8 +61,8 @@ class ChatWindow:
         self.agent = GeoAgent(workdir=workdir)
         self._log_path = setup_logging()
         sys.excepthook = gui_crash_hook
-        self.root.report_callback_exception = lambda et, ev, tb: gui_crash_hook(et, ev, tb)
         self.root = tk.Tk()
+        self.root.report_callback_exception = lambda et, ev, tb: gui_crash_hook(et, ev, tb)
         self.root.title("Ricardo Agent")
         self.root.geometry("1180x760")
         self.root.minsize(900, 600)
